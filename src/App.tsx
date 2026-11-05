@@ -1,5 +1,6 @@
-import { Play, Square, Plus, Minus, Volume2, Mic, Music } from 'lucide-react';
+import { Play, Square, Bell, Disc3 } from 'lucide-react';
 import { useMetronome } from './hooks/useMetronome';
+import { CLICK_CATEGORIES, categorizeClickPattern } from './utils/patternCategorizer';
 
 export default function App() {
   const {
@@ -11,19 +12,27 @@ export default function App() {
     currentBar,
     isMuted,
     config,
+    mode,
+    selectedClickPattern,
+    selectedDrumPattern,
+    selectedDrumGenre,
+    filteredDrumPatterns,
+    drumGenres,
     clickPatterns,
-    drumPatterns,
+    setMode,
+    selectClickPattern,
+    selectDrumPattern,
+    selectDrumGenre,
     setBpm,
     updateConfig,
     togglePlay,
     tapTempo,
   } = useMetronome();
 
-  // 音源ロード中画面
   if (isLoading) {
     return (
       <div className="flex h-screen w-screen flex-col items-center justify-center bg-zinc-950 text-white">
-        <div className="text-xl font-bold tracking-wider text-emerald-400 mb-4">
+        <div className="text-xl font-bold tracking-wider text-emerald-400 mb-4 font-mono">
           metronome-ng
         </div>
         <div className="w-64 h-2 bg-zinc-800 rounded-full overflow-hidden">
@@ -38,7 +47,6 @@ export default function App() {
   }
 
   const { pattern } = config;
-  const isClicks = !config.drumsOn;
 
   return (
     <div className="flex min-h-screen flex-col bg-zinc-950 text-zinc-100 select-none pb-8">
@@ -94,7 +102,6 @@ export default function App() {
             <span className="ml-2 text-sm font-bold text-zinc-400">BPM</span>
           </div>
 
-          {/* ± ボタン群（スティックで押しやすい大型サイズ） */}
           <div className="grid grid-cols-6 gap-1.5 w-full">
             <button
               onClick={() => setBpm(bpm - 5)}
@@ -134,7 +141,6 @@ export default function App() {
             </button>
           </div>
 
-          {/* スライダー */}
           <input
             type="range"
             min={config.minBpm}
@@ -146,7 +152,7 @@ export default function App() {
           />
         </div>
 
-        {/* 3. 巨大アクションボタン（START / STOP & TAP） */}
+        {/* 3. START / STOP & TAP */}
         <div className="grid grid-cols-3 gap-3">
           <button
             onClick={togglePlay}
@@ -176,102 +182,180 @@ export default function App() {
           </button>
         </div>
 
-        {/* 4. パターン & 音色クイック選択 */}
-        <div className="space-y-3 bg-zinc-900/80 border border-zinc-800/80 p-4 rounded-xl">
-          {/* パターン種別トグル */}
-          <div className="grid grid-cols-2 gap-2 bg-zinc-950 p-1 rounded-lg">
+        {/* 4. モード切り替え & パターン選択エリア */}
+        <div className="space-y-4 bg-zinc-900/90 border border-zinc-800 p-4 rounded-2xl shadow-xl">
+          {/* A. モードタブ (METRONOME vs DRUM KIT) */}
+          <div className="grid grid-cols-2 gap-2 bg-zinc-950 p-1.5 rounded-xl border border-zinc-800/80">
             <button
-              onClick={() => updateConfig({ drumsOn: false })}
-              className={`py-1.5 text-xs font-bold rounded-md transition-all ${
-                isClicks ? 'bg-zinc-800 text-emerald-400 shadow' : 'text-zinc-400'
+              onClick={() => setMode('metronome')}
+              className={`flex items-center justify-center gap-2 py-2 text-xs font-black tracking-wide rounded-lg transition-all ${
+                mode === 'metronome'
+                  ? 'bg-emerald-500 text-zinc-950 shadow-md font-bold'
+                  : 'text-zinc-400 hover:text-white'
               }`}
             >
-              METRONOME
+              <Bell className="w-4 h-4" /> METRONOME
             </button>
             <button
-              onClick={() => updateConfig({ drumsOn: true })}
-              className={`py-1.5 text-xs font-bold rounded-md transition-all ${
-                !isClicks ? 'bg-zinc-800 text-emerald-400 shadow' : 'text-zinc-400'
+              onClick={() => setMode('drums')}
+              className={`flex items-center justify-center gap-2 py-2 text-xs font-black tracking-wide rounded-lg transition-all ${
+                mode === 'drums'
+                  ? 'bg-emerald-500 text-zinc-950 shadow-md font-bold'
+                  : 'text-zinc-400 hover:text-white'
               }`}
             >
-              DRUM LOOPS
+              <Disc3 className="w-4 h-4" /> DRUM KIT
             </button>
           </div>
 
-          {/* パターン選択 */}
-          <div>
-            <label className="text-xs font-bold text-zinc-400 mb-1 block">PATTERN</label>
-            <select
-              value={isClicks ? config.pattern.name : config.pattern.name}
-              onChange={(e) => {
-                const list = isClicks ? clickPatterns : drumPatterns;
-                const found = list.find((p) => p.name === e.target.value);
-                if (found) {
-                  updateConfig({
-                    pattern: found,
-                    swingVal: found.swingVal ?? 1.5,
-                  });
-                }
-              }}
-              className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500 font-mono"
-            >
-              {(isClicks ? clickPatterns : drumPatterns).map((p) => (
-                <option key={p.name} value={p.name}>
-                  {p.name} ({p.numerator}/{p.denominator})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* サウンド設定 */}
-          <div className="grid grid-cols-2 gap-2 pt-1">
-            {isClicks && (
+          {/* B. モードごとの選択コントロール */}
+          {mode === 'metronome' ? (
+            /* --- METRONOME モード --- */
+            <div className="space-y-3">
               <div>
-                <label className="text-xs font-bold text-zinc-400 mb-1 block">SOUND</label>
+                <label className="text-[11px] font-bold text-zinc-400 mb-1 block">
+                  TIME SIGNATURE / PATTERN
+                </label>
                 <select
-                  value={config.metroSound}
-                  onChange={(e) => updateConfig({ metroSound: e.target.value })}
-                  className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none"
+                  value={selectedClickPattern.name}
+                  onChange={(e) => {
+                    const found = clickPatterns.find((p) => p.name === e.target.value);
+                    if (found) selectClickPattern(found);
+                  }}
+                  className="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500 font-mono"
                 >
-                  <option value="cb1">Cowbell 1</option>
-                  <option value="cb2">Cowbell 2</option>
-                  <option value="cb3">Cowbell 3</option>
-                  <option value="2cb1">2-Cowbell 1</option>
-                  <option value="3cb2">3-Cowbell 2</option>
-                  <option value="1cg1">Conga 1</option>
-                  <option value="2cg1">2-Conga 1</option>
-                  <option value="cv">Clave</option>
-                  <option value="hc">Hand Clap</option>
+                  {CLICK_CATEGORIES.map((cat) => (
+                    <optgroup key={cat} label={`── ${cat} ──`} className="bg-zinc-900 text-emerald-400">
+                      {clickPatterns
+                        .filter((p) => categorizeClickPattern(p) === cat)
+                        .map((p) => (
+                          <option key={p.name} value={p.name} className="bg-zinc-950 text-white font-mono">
+                            {p.name} ({p.numerator}/{p.denominator})
+                          </option>
+                        ))}
+                    </optgroup>
+                  ))}
                 </select>
               </div>
-            )}
 
-            <div>
-              <label className="text-xs font-bold text-zinc-400 mb-1 block">VOICE COUNT</label>
-              <div className="flex gap-1">
-                <button
-                  onClick={() => updateConfig({ voiceOn: !config.voiceOn })}
-                  className={`flex-1 py-1.5 rounded-lg text-xs font-bold border transition-all ${
-                    config.voiceOn
-                      ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400'
-                      : 'bg-zinc-950 border-zinc-700 text-zinc-500'
-                  }`}
-                >
-                  {config.voiceOn ? 'ON' : 'OFF'}
-                </button>
-                {config.voiceOn && (
+              {/* クリック音色 & 音声カウント */}
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <div>
+                  <label className="text-[11px] font-bold text-zinc-400 mb-1 block">SOUND</label>
                   <select
-                    value={config.voice}
-                    onChange={(e) => updateConfig({ voice: e.target.value as 'female' | 'male' })}
-                    className="bg-zinc-950 border border-zinc-700 rounded-lg px-2 text-xs text-white"
+                    value={config.metroSound}
+                    onChange={(e) => updateConfig({ metroSound: e.target.value })}
+                    className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-2.5 py-2 text-xs text-white focus:outline-none"
                   >
-                    <option value="female">Female</option>
-                    <option value="male">Male</option>
+                    <option value="cb1">Cowbell 1</option>
+                    <option value="cb2">Cowbell 2</option>
+                    <option value="cb3">Cowbell 3</option>
+                    <option value="2cb1">2-Cowbell 1</option>
+                    <option value="3cb2">3-Cowbell 2</option>
+                    <option value="1cg1">Conga 1</option>
+                    <option value="2cg1">2-Conga 1</option>
+                    <option value="cv">Clave</option>
+                    <option value="hc">Hand Clap</option>
                   </select>
-                )}
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-bold text-zinc-400 mb-1 block">VOICE COUNT</label>
+                  <div className="flex gap-1.5">
+                    <button
+                      onClick={() => updateConfig({ voiceOn: !config.voiceOn })}
+                      className={`flex-1 py-2 rounded-lg text-xs font-bold border transition-all ${
+                        config.voiceOn
+                          ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400'
+                          : 'bg-zinc-950 border-zinc-700 text-zinc-500'
+                      }`}
+                    >
+                      {config.voiceOn ? 'ON' : 'OFF'}
+                    </button>
+                    {config.voiceOn && (
+                      <select
+                        value={config.voice}
+                        onChange={(e) => updateConfig({ voice: e.target.value as 'female' | 'male' })}
+                        className="bg-zinc-950 border border-zinc-700 rounded-lg px-2 text-xs text-white"
+                      >
+                        <option value="female">Female</option>
+                        <option value="male">Male</option>
+                      </select>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
+          ) : (
+            /* --- DRUM KIT モード --- */
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-2">
+                {/* 1. GENRE 選択 (Jim Riley 10章) */}
+                <div>
+                  <label className="text-[11px] font-bold text-zinc-400 mb-1 block">GENRE (STYLE)</label>
+                  <select
+                    value={selectedDrumGenre}
+                    onChange={(e) => selectDrumGenre(e.target.value as any)}
+                    className="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-2.5 py-2.5 text-xs text-emerald-400 font-bold focus:outline-none focus:border-emerald-500"
+                  >
+                    {drumGenres.map((g) => (
+                      <option key={g} value={g} className="text-white">
+                        {g}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* 2. 音声カウント */}
+                <div>
+                  <label className="text-[11px] font-bold text-zinc-400 mb-1 block">VOICE COUNT</label>
+                  <div className="flex gap-1.5">
+                    <button
+                      onClick={() => updateConfig({ voiceOn: !config.voiceOn })}
+                      className={`flex-1 py-2 rounded-lg text-xs font-bold border transition-all ${
+                        config.voiceOn
+                          ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400'
+                          : 'bg-zinc-950 border-zinc-700 text-zinc-500'
+                      }`}
+                    >
+                      {config.voiceOn ? 'ON' : 'OFF'}
+                    </button>
+                    {config.voiceOn && (
+                      <select
+                        value={config.voice}
+                        onChange={(e) => updateConfig({ voice: e.target.value as 'female' | 'male' })}
+                        className="bg-zinc-950 border border-zinc-700 rounded-lg px-2 text-xs text-white"
+                      >
+                        <option value="female">Female</option>
+                        <option value="male">Male</option>
+                      </select>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* 3. PATTERN 選択（ジャンルで絞り込み済み） */}
+              <div>
+                <label className="text-[11px] font-bold text-zinc-400 mb-1 block">
+                  DRUM PATTERN ({filteredDrumPatterns.length} available)
+                </label>
+                <select
+                  value={selectedDrumPattern.name}
+                  onChange={(e) => {
+                    const found = filteredDrumPatterns.find((p) => p.name === e.target.value);
+                    if (found) selectDrumPattern(found);
+                  }}
+                  className="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-emerald-500 font-mono"
+                >
+                  {filteredDrumPatterns.map((p) => (
+                    <option key={p.name} value={p.name}>
+                      {p.name} ({p.numerator}/{p.denominator})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
         </div>
       </main>
     </div>

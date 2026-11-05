@@ -4,17 +4,17 @@ import type { MetronomePattern } from '../types/metronome';
 export interface MetronomeConfig {
   bpm: number;
   pattern: MetronomePattern;
-  metroSound: string;      // '3cb2', '1cg1', 'cv' など
+  metroSound: string;
   voiceOn: boolean;
   voice: 'female' | 'male';
   drumsOn: boolean;
-  swingVal: number;        // 1.5 (Straight) 〜 2.0 (Heavy Swing)
-  masterVol: number;       // 0 〜 100
-  evenVol: number;         // 0.0 〜 1.0 (裏拍・ダウンビートの音量)
-  increment: number;       // 自動テンポ変化量 (-10 〜 +10)
-  perBars: number;         // 何小節ごとに変化させるか (0 = off)
-  muteBars: number;        // ランダムミュート小節数 (0 = off)
-  muteProb: number;        // ランダムミュート確率 (0.0 〜 1.0)
+  swingVal: number;
+  masterVol: number;
+  evenVol: number;
+  increment: number;
+  perBars: number;
+  muteBars: number;
+  muteProb: number;
   minBpm: number;
   maxBpm: number;
 }
@@ -26,24 +26,17 @@ export class MetronomeEngine {
   private audioManager: AudioManager;
   private worker: Worker | null = null;
 
-  // 設定状態
   public config: MetronomeConfig;
-
-  // 再生ステータス
   public isPlaying: boolean = false;
   private nextNoteTime: number = 0;
   private currentNoteIndex: number = 0;
   private barCount: number = 0;
 
-  // スケジューリング設定 (秒)
-  private readonly lookahead: number = 0.1; // 100ms 先まで先読み
   private readonly scheduleAheadTime: number = 0.1;
 
-  // 練習用内部ステータス
   private muteCount: number = 0;
   private isMuted: boolean = false;
 
-  // コールバック
   public onBeat: BeatCallback | null = null;
   public onTempoChange: TempoChangeCallback | null = null;
 
@@ -54,7 +47,6 @@ export class MetronomeEngine {
   }
 
   private initWorker(): void {
-    // Vite の標準 Worker 読み込み構文
     this.worker = new Worker(
       new URL('./scheduler.worker.ts', import.meta.url),
       { type: 'module' }
@@ -65,6 +57,22 @@ export class MetronomeEngine {
         this.scheduler();
       }
     };
+  }
+
+  /**
+   * パターン安全更新メソッド
+   */
+  public updatePattern(newPattern: MetronomePattern, isDrums: boolean): void {
+    this.config.pattern = newPattern;
+    this.config.drumsOn = isDrums;
+
+    // パターンに swingVal が定義されていればそれを適用、なければ 1.5 (ストレート) に確実にリセット
+    this.config.swingVal = newPattern.swingVal !== undefined ? newPattern.swingVal : 1.5;
+
+    // 現在の拍数が新しいパターンの分子以上なら安全に0に戻す
+    if (this.currentNoteIndex >= newPattern.numerator) {
+      this.currentNoteIndex = 0;
+    }
   }
 
   public async start(): Promise<void> {
@@ -78,9 +86,7 @@ export class MetronomeEngine {
     this.muteCount = 0;
     this.isMuted = false;
 
-    // 押した瞬間の currentTime を起点にする（ゼロレイテンシー）
     this.nextNoteTime = this.audioManager.context.currentTime;
-
     this.worker?.postMessage('start');
   }
 
@@ -90,47 +96,53 @@ export class MetronomeEngine {
     this.worker?.postMessage('stop');
   }
 
-  /**
-   * Lookahead スケジューラ
-   */
   private scheduler(): void {
-    const ctx = this.audioManager.context;
+    try {
+      const ctx = this.audioManager.context;
 
-    while (this.nextNoteTime < ctx.currentTime + this.scheduleAheadTime) {
-      this.scheduleNote(this.currentNoteIndex, this.nextNoteTime);
-      this.advanceNote();
+      while (this.nextNoteTime < ctx.currentTime + this.scheduleAheadTime) {
+        this.scheduleNote(this.currentNoteIndex, this.nextNoteTime);
+        this.advanceNote();
+      }
+    } catch (err) {
+      console.error('Scheduler error caught:', err);
     }
   }
 
-  /**
-   * 次の音符の時刻と小節進行の計算
-   */
   private advanceNote(): void {
     const { bpm, pattern, swingVal } = this.config;
-    const noteInterval = 60.0 / (bpm * (pattern.denominator / 4));
+    const denominator = pattern.denominator || 4;
+    const numerator = pattern.numerator || 4;
+    const baseInterval = 60.0 / (bpm * (denominator / 4));
 
-    // スウィング（奇数番目の裏拍をオフセット）
-    let offset = 0;
-    if (swingVal !== 1.5 && this.currentNoteIndex % 2 === 1) {
-      offset = ((swingVal - 1.5) / 1.5) * noteInterval;
+    let interval = baseInterval;
+
+    // スウィング（ハネ）の計算
+    // 表拍(偶数)の後は長く (+offset)、裏拍(奇数)の後は短く (-offset)
+    if (swingVal !== 1.5) {
+      // swingVal = 2.0 のとき offset = (0.5 / 1.5) * base = 1/3 * base (ジャスト3連符シャッフル)
+      const offset = ((swingVal - 1.5) / 1.5) * baseInterval;
+
+      if (this.currentNoteIndex % 2 === 0) {
+        // 表拍(0)を打った後 -> 次の裏拍(1)までは長く伸ばす
+        interval = baseInterval + offset;
+      } else {
+        // 裏拍(1)を打った後 -> 次の表拍(2)までは短く詰める
+        interval = baseInterval - offset;
+      }
     }
 
-    this.nextNoteTime += noteInterval + offset;
+    this.nextNoteTime += interval;
     this.currentNoteIndex++;
 
-    // 小節の終わり
-    if (this.currentNoteIndex >= pattern.numerator) {
+    if (this.currentNoteIndex >= numerator) {
       this.currentNoteIndex = 0;
       this.barCount++;
       this.handleBarTransition();
     }
   }
 
-  /**
-   * 小節更新時の練習機能処理（自動テンポ加減速 & ランダムミュート）
-   */
   private handleBarTransition(): void {
-    // 1. 自動テンポ加減速
     const { perBars, increment, minBpm, maxBpm, bpm } = this.config;
     if (perBars > 0 && this.barCount > 0 && this.barCount % perBars === 0) {
       let newBpm = Math.round((bpm + increment) * 10) / 10;
@@ -140,7 +152,6 @@ export class MetronomeEngine {
       this.onTempoChange?.(newBpm);
     }
 
-    // 2. ランダムミュート
     const { muteBars, muteProb } = this.config;
     if (muteBars > 0 && muteProb > 0) {
       if (this.muteCount >= muteBars) {
@@ -158,15 +169,12 @@ export class MetronomeEngine {
     }
   }
 
-  /**
-   * 1つのノートの発音スケジュール
-   */
   private scheduleNote(noteIndex: number, time: number): void {
     const { pattern, masterVol, evenVol, voiceOn, voice, metroSound, drumsOn } = this.config;
     const ctx = this.audioManager.context;
     const masterGain = masterVol / 100;
 
-    // UI ビート同期の予約
+    // UI ビート同期
     const timeUntilNote = Math.max(0, time - ctx.currentTime);
     setTimeout(() => {
       if (this.isPlaying) {
@@ -174,10 +182,8 @@ export class MetronomeEngine {
       }
     }, timeUntilNote * 1000);
 
-    // ミュート小節の場合は発音しない（ただし音声カウントのみ鳴らす等の調整も可能）
     if (this.isMuted) return;
 
-    // 裏拍/ダウンビートの音量補正
     let noteGainFactor = 1.0;
     if (pattern.triplet) {
       if (noteIndex % 3 !== 0) noteGainFactor = evenVol;
@@ -188,10 +194,14 @@ export class MetronomeEngine {
     // A. ドラムキット再生
     if (drumsOn && pattern.type === 'drumkit') {
       const tracks = pattern.pattern;
+      if (!tracks) return;
+
       for (let i = 0; i < tracks.length; i++) {
         const track = tracks[i];
+        if (!track.values || noteIndex >= track.values.length) continue;
+
         const val = track.values[noteIndex];
-        if (val === 0) continue;
+        if (!val || val === 0 || isNaN(val)) continue; // ★NaN / 0 防御
 
         if (track.note === 'voice') {
           if (voiceOn) {
@@ -207,19 +217,29 @@ export class MetronomeEngine {
 
     // B. メトロノーム（Clicks）再生
     const tracks = pattern.pattern;
-    const lastTrackIndex = tracks.length - 1;
+    if (!tracks || tracks.length === 0) return;
 
-    // 音声カウント（最後のトラックが voice の場合）
+    const lastTrackIndex = tracks.length - 1;
     const lastTrack = tracks[lastTrackIndex];
-    if (voiceOn && lastTrack?.note === 'voice' && lastTrack.values[noteIndex] > 0) {
+
+    if (
+      voiceOn &&
+      lastTrack?.note === 'voice' &&
+      lastTrack.values &&
+      noteIndex < lastTrack.values.length
+    ) {
       const countNum = lastTrack.values[noteIndex];
-      this.playSample(`${voice}_${countNum}`, time, masterGain * 0.7);
+      if (countNum > 0 && !isNaN(countNum)) {
+        this.playSample(`${voice}_${countNum}`, time, masterGain * 0.7);
+      }
     }
 
-    // クリック音（カウベル、コンガなど）
     for (let i = 0; i < lastTrackIndex; i++) {
-      const val = tracks[i].values[noteIndex];
-      if (val === 0) continue;
+      const track = tracks[i];
+      if (!track.values || noteIndex >= track.values.length) continue;
+
+      const val = track.values[noteIndex];
+      if (!val || val === 0 || isNaN(val)) continue;
 
       const soundName = this.resolveClickSound(metroSound, i, lastTrackIndex);
       if (soundName) {
@@ -229,30 +249,29 @@ export class MetronomeEngine {
     }
   }
 
-  /**
-   * サンプル再生（先頭トリム適用）
-   */
   private playSample(name: string, time: number, gain: number): void {
+    if (!isFinite(gain) || gain <= 0 || !isFinite(time)) return; // ★不正な数値を完全排除
+
     const sound = this.audioManager.getSound(name);
     if (!sound) return;
 
-    const ctx = this.audioManager.context;
-    const source = ctx.createBufferSource();
-    source.buffer = sound.buffer;
+    try {
+      const ctx = this.audioManager.context;
+      const source = ctx.createBufferSource();
+      source.buffer = sound.buffer;
 
-    const gainNode = ctx.createGain();
-    gainNode.gain.setValueAtTime(gain, time);
+      const gainNode = ctx.createGain();
+      gainNode.gain.setValueAtTime(gain, time);
 
-    source.connect(gainNode);
-    gainNode.connect(ctx.destination);
+      source.connect(gainNode);
+      gainNode.connect(ctx.destination);
 
-    // オフトリム（startOffset）を適用してアタックのズレを解消！
-    source.start(time, sound.startOffset);
+      source.start(time, sound.startOffset);
+    } catch (err) {
+      console.warn(`Failed to play sample ${name}:`, err);
+    }
   }
 
-  /**
-   * カウベル・コンガなどのサウンドマップ解決
-   */
   private resolveClickSound(preset: string, trackIdx: number, totalTracks: number): string {
     const isFirst = trackIdx === 0;
 
