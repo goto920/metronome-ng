@@ -17,10 +17,14 @@ export interface MetronomeConfig {
   muteProb: number;
   minBpm: number;
   maxBpm: number;
+  // タイマー設定 (0 = 無効)
+  timerSeconds: number;
+  timerBars: number;
 }
 
 export type BeatCallback = (beat: number, bar: number, isMuted: boolean) => void;
 export type TempoChangeCallback = (newBpm: number) => void;
+export type TimerCallback = (timeRemaining: number, barsRemaining: number) => void;
 
 export class MetronomeEngine {
   private audioManager: AudioManager;
@@ -34,11 +38,18 @@ export class MetronomeEngine {
 
   private readonly scheduleAheadTime: number = 0.1;
 
+  // 練習用ステータス
   private muteCount: number = 0;
   private isMuted: boolean = false;
+  private startTime: number = 0;
+  private timeRemaining: number = 0;
+  private barsRemaining: number = 0;
 
+  // コールバック
   public onBeat: BeatCallback | null = null;
   public onTempoChange: TempoChangeCallback | null = null;
+  public onTimerTick: TimerCallback | null = null;
+  public onTimerEnd: (() => void) | null = null;
 
   constructor(initialConfig: MetronomeConfig) {
     this.audioManager = AudioManager.getInstance();
@@ -59,17 +70,11 @@ export class MetronomeEngine {
     };
   }
 
-  /**
-   * パターン安全更新メソッド
-   */
   public updatePattern(newPattern: MetronomePattern, isDrums: boolean): void {
     this.config.pattern = newPattern;
     this.config.drumsOn = isDrums;
-
-    // パターンに swingVal が定義されていればそれを適用、なければ 1.5 (ストレート) に確実にリセット
     this.config.swingVal = newPattern.swingVal !== undefined ? newPattern.swingVal : 1.5;
 
-    // 現在の拍数が新しいパターンの分子以上なら安全に0に戻す
     if (this.currentNoteIndex >= newPattern.numerator) {
       this.currentNoteIndex = 0;
     }
@@ -86,7 +91,12 @@ export class MetronomeEngine {
     this.muteCount = 0;
     this.isMuted = false;
 
-    this.nextNoteTime = this.audioManager.context.currentTime;
+    // タイマーの初期化
+    this.startTime = this.audioManager.context.currentTime;
+    this.timeRemaining = this.config.timerSeconds;
+    this.barsRemaining = this.config.timerBars;
+
+    this.nextNoteTime = this.startTime;
     this.worker?.postMessage('start');
   }
 
@@ -99,6 +109,22 @@ export class MetronomeEngine {
   private scheduler(): void {
     try {
       const ctx = this.audioManager.context;
+
+      // 時間タイマーの更新
+      if (this.config.timerSeconds > 0) {
+        const elapsed = ctx.currentTime - this.startTime;
+        const remaining = Math.max(0, Math.ceil(this.config.timerSeconds - elapsed));
+        if (remaining !== this.timeRemaining) {
+          this.timeRemaining = remaining;
+          this.onTimerTick?.(this.timeRemaining, this.barsRemaining);
+        }
+
+        if (remaining <= 0) {
+          this.stop();
+          this.onTimerEnd?.();
+          return;
+        }
+      }
 
       while (this.nextNoteTime < ctx.currentTime + this.scheduleAheadTime) {
         this.scheduleNote(this.currentNoteIndex, this.nextNoteTime);
@@ -117,17 +143,11 @@ export class MetronomeEngine {
 
     let interval = baseInterval;
 
-    // スウィング（ハネ）の計算
-    // 表拍(偶数)の後は長く (+offset)、裏拍(奇数)の後は短く (-offset)
     if (swingVal !== 1.5) {
-      // swingVal = 2.0 のとき offset = (0.5 / 1.5) * base = 1/3 * base (ジャスト3連符シャッフル)
       const offset = ((swingVal - 1.5) / 1.5) * baseInterval;
-
       if (this.currentNoteIndex % 2 === 0) {
-        // 表拍(0)を打った後 -> 次の裏拍(1)までは長く伸ばす
         interval = baseInterval + offset;
       } else {
-        // 裏拍(1)を打った後 -> 次の表拍(2)までは短く詰める
         interval = baseInterval - offset;
       }
     }
@@ -143,6 +163,19 @@ export class MetronomeEngine {
   }
 
   private handleBarTransition(): void {
+    // 1. 小節タイマーの処理
+    if (this.config.timerBars > 0) {
+      this.barsRemaining = Math.max(0, this.config.timerBars - this.barCount);
+      this.onTimerTick?.(this.timeRemaining, this.barsRemaining);
+
+      if (this.barsRemaining <= 0) {
+        this.stop();
+        this.onTimerEnd?.();
+        return;
+      }
+    }
+
+    // 2. 自動テンポ加減速
     const { perBars, increment, minBpm, maxBpm, bpm } = this.config;
     if (perBars > 0 && this.barCount > 0 && this.barCount % perBars === 0) {
       let newBpm = Math.round((bpm + increment) * 10) / 10;
@@ -152,6 +185,7 @@ export class MetronomeEngine {
       this.onTempoChange?.(newBpm);
     }
 
+    // 3. ランダムミュート
     const { muteBars, muteProb } = this.config;
     if (muteBars > 0 && muteProb > 0) {
       if (this.muteCount >= muteBars) {
@@ -174,7 +208,6 @@ export class MetronomeEngine {
     const ctx = this.audioManager.context;
     const masterGain = masterVol / 100;
 
-    // UI ビート同期
     const timeUntilNote = Math.max(0, time - ctx.currentTime);
     setTimeout(() => {
       if (this.isPlaying) {
@@ -191,7 +224,6 @@ export class MetronomeEngine {
       if (noteIndex % 2 === 1) noteGainFactor = evenVol;
     }
 
-    // A. ドラムキット再生
     if (drumsOn && pattern.type === 'drumkit') {
       const tracks = pattern.pattern;
       if (!tracks) return;
@@ -201,7 +233,7 @@ export class MetronomeEngine {
         if (!track.values || noteIndex >= track.values.length) continue;
 
         const val = track.values[noteIndex];
-        if (!val || val === 0 || isNaN(val)) continue; // ★NaN / 0 防御
+        if (!val || val === 0 || isNaN(val)) continue;
 
         if (track.note === 'voice') {
           if (voiceOn) {
@@ -215,7 +247,6 @@ export class MetronomeEngine {
       return;
     }
 
-    // B. メトロノーム（Clicks）再生
     const tracks = pattern.pattern;
     if (!tracks || tracks.length === 0) return;
 
@@ -250,7 +281,7 @@ export class MetronomeEngine {
   }
 
   private playSample(name: string, time: number, gain: number): void {
-    if (!isFinite(gain) || gain <= 0 || !isFinite(time)) return; // ★不正な数値を完全排除
+    if (!isFinite(gain) || gain <= 0 || !isFinite(time)) return;
 
     const sound = this.audioManager.getSound(name);
     if (!sound) return;

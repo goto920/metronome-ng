@@ -2,8 +2,8 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import legacy from '@vitejs/plugin-legacy';
+import { VitePWA } from 'vite-plugin-pwa';
 
-// ビルド実行時の日本時間（JST）からバージョン文字列を生成 (例: v20261107-1030)
 function getJstVersion(): string {
   const now = new Date();
   const jstDate = new Date(now.getTime() + (9 * 60 - now.getTimezoneOffset()) * 60000);
@@ -23,14 +23,38 @@ export default defineConfig({
       targets: ['ios >= 12', 'safari >= 12', 'defaults'],
       additionalLegacyPolyfills: ['regenerator-runtime/runtime'],
     }),
+    VitePWA({
+      registerType: 'autoUpdate',
+      includeAssets: ['favicon.ico', '**/*.mp3'],
+      manifest: {
+        name: "KG's Metronome Next Generation",
+        short_name: 'Metronome-NG',
+        description: 'High-precision web metronome and groove machine for drummers',
+        theme_color: '#09090b',
+        background_color: '#09090b',
+        display: 'standalone',
+        orientation: 'portrait',
+        icons: [
+          {
+            src: 'favicon.ico',
+            sizes: '64x64 32x32 24x24 16x16',
+            type: 'image/x-icon',
+          },
+        ],
+      },
+      workbox: {
+        // 全 JS/CSS/HTML/JSON および mp3 音声をオフライン用に事前キャッシュ
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,json,mp3}'],
+        // 音声ファイルを含めるため 1 ファイルあたりのキャッシュ上限を 10MB に拡張
+        maximumFileSizeToCacheInBytes: 10 * 1024 * 1024,
+      },
+    }),
   ],
-  // GitHub Pages / サブディレクトリ配備用の相対パス設定
   base: './',
   define: {
     __BUILD_VERSION__: JSON.stringify(getJstVersion()),
   },
   build: {
-    // 音声アセットやレガシーバンドルを含むため警告上限を緩和
     chunkSizeWarningLimit: 2000,
   },
 });

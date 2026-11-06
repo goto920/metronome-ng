@@ -4,7 +4,6 @@ import { MetronomeEngine, type MetronomeConfig } from '../audio/MetronomeEngine'
 import type { MetronomePattern } from '../types/metronome';
 import {
   categorizeDrumPattern,
-  // categorizeClickPattern,
   DRUM_GENRES,
   type DrumGenre,
 } from '../utils/patternCategorizer';
@@ -15,7 +14,6 @@ import rawDrumPatterns from '../data/drumPatterns.json';
 const clickPatterns = rawClickPatterns as MetronomePattern[];
 const drumPatterns = rawDrumPatterns as MetronomePattern[];
 
-// 初期パターン
 const defaultClick = clickPatterns.find((p) => p.default) || clickPatterns[0];
 const defaultDrum = drumPatterns.find((p) => p.default) || drumPatterns[0];
 
@@ -35,6 +33,8 @@ const defaultConfig: MetronomeConfig = {
   muteProb: 0.0,
   minBpm: 30,
   maxBpm: 360,
+  timerSeconds: 0,
+  timerBars: 0,
 };
 
 export function useMetronome() {
@@ -47,7 +47,10 @@ export function useMetronome() {
   const [isMuted, setIsMuted] = useState(false);
   const [config, setConfigState] = useState<MetronomeConfig>(defaultConfig);
 
-  // モードとそれぞれの選択状態
+  // タイマー状態
+  const [timeRemaining, setTimeRemaining] = useState(0);
+  const [barsRemaining, setBarsRemaining] = useState(0);
+
   const [mode, setModeState] = useState<'metronome' | 'drums'>('metronome');
   const [selectedClickPattern, setSelectedClickPattern] = useState<MetronomePattern>(defaultClick);
   const [selectedDrumPattern, setSelectedDrumPattern] = useState<MetronomePattern>(defaultDrum);
@@ -56,7 +59,6 @@ export function useMetronome() {
   const engineRef = useRef<MetronomeEngine | null>(null);
   const tapTimesRef = useRef<number[]>([]);
 
-  // 1. 初回音源ロード & エンジン初期化
   useEffect(() => {
     const audioManager = AudioManager.getInstance();
 
@@ -77,6 +79,16 @@ export function useMetronome() {
           setBpmState(newBpm);
         };
 
+        engine.onTimerTick = (tRemaining, bRemaining) => {
+          setTimeRemaining(tRemaining);
+          setBarsRemaining(bRemaining);
+        };
+
+        engine.onTimerEnd = () => {
+          setIsPlaying(false);
+          setCurrentBeat(0);
+        };
+
         engineRef.current = engine;
         setIsLoading(false);
       });
@@ -86,7 +98,6 @@ export function useMetronome() {
     };
   }, []);
 
-  // 2. モード切り替え（METRONOME ⇄ DRUMS）
   const setMode = useCallback((newMode: 'metronome' | 'drums') => {
     setModeState(newMode);
     const isDrums = newMode === 'drums';
@@ -106,7 +117,6 @@ export function useMetronome() {
     });
   }, [selectedDrumPattern, selectedClickPattern]);
 
-  // 3. クリックパターン変更
   const selectClickPattern = useCallback((pattern: MetronomePattern) => {
     setSelectedClickPattern(pattern);
     setConfigState((prev) => {
@@ -123,7 +133,6 @@ export function useMetronome() {
     });
   }, []);
 
-  // 4. ドラムパターン変更
   const selectDrumPattern = useCallback((pattern: MetronomePattern) => {
     setSelectedDrumPattern(pattern);
     setConfigState((prev) => {
@@ -140,7 +149,6 @@ export function useMetronome() {
     });
   }, []);
 
-  // 5. ドラムジャンル変更（ジャンル内の先頭パターンを自動選択）
   const selectDrumGenre = useCallback((genre: DrumGenre) => {
     setSelectedDrumGenre(genre);
     if (genre === 'All') return;
@@ -151,13 +159,11 @@ export function useMetronome() {
     }
   }, [selectDrumPattern]);
 
-  // ジャンルで絞り込まれたドラムパターン一覧
   const filteredDrumPatterns = useMemo(() => {
     if (selectedDrumGenre === 'All') return drumPatterns;
     return drumPatterns.filter((p) => categorizeDrumPattern(p.name) === selectedDrumGenre);
   }, [selectedDrumGenre]);
 
-  // BPM変更
   const setBpm = useCallback((newBpm: number) => {
     const clamped = Math.max(
       defaultConfig.minBpm,
@@ -169,7 +175,6 @@ export function useMetronome() {
     }
   }, []);
 
-  // 設定更新
   const updateConfig = useCallback((partial: Partial<MetronomeConfig>) => {
     setConfigState((prev) => {
       const next = { ...prev, ...partial };
@@ -180,7 +185,6 @@ export function useMetronome() {
     });
   }, []);
 
-  // 再生 / 停止トグル
   const togglePlay = useCallback(async () => {
     if (!engineRef.current) return;
 
@@ -189,12 +193,13 @@ export function useMetronome() {
       setIsPlaying(false);
       setCurrentBeat(0);
     } else {
+      setTimeRemaining(config.timerSeconds);
+      setBarsRemaining(config.timerBars);
       await engineRef.current.start();
       setIsPlaying(true);
     }
-  }, [isPlaying]);
+  }, [isPlaying, config.timerSeconds, config.timerBars]);
 
-  // タップテンポ
   const tapTempo = useCallback(() => {
     const now = performance.now();
     const taps = tapTimesRef.current;
@@ -229,6 +234,8 @@ export function useMetronome() {
     currentBar,
     isMuted,
     config,
+    timeRemaining,
+    barsRemaining,
     mode,
     selectedClickPattern,
     selectedDrumPattern,
