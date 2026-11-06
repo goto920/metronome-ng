@@ -1,0 +1,1 @@
+(function(){let e=null;self.onmessage=t=>{t.data===`start`?(e!==null&&clearInterval(e),e=self.setInterval(()=>{self.postMessage(`tick`)},25)):t.data===`stop`&&e!==null&&(clearInterval(e),e=null)}})();
