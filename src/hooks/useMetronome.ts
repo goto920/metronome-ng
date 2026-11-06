@@ -4,7 +4,7 @@ import { MetronomeEngine, type MetronomeConfig } from '../audio/MetronomeEngine'
 import type { MetronomePattern } from '../types/metronome';
 import {
   categorizeDrumPattern,
-  categorizeClickPattern,
+  // categorizeClickPattern,
   DRUM_GENRES,
   type DrumGenre,
 } from '../utils/patternCategorizer';

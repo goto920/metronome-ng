@@ -272,7 +272,7 @@ export class MetronomeEngine {
     }
   }
 
-  private resolveClickSound(preset: string, trackIdx: number, totalTracks: number): string {
+  private resolveClickSound(preset: string, trackIdx: number, _totalTracks: number): string {
     const isFirst = trackIdx === 0;
 
     switch (preset) {

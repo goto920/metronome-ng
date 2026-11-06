@@ -358,6 +358,18 @@ export default function App() {
           )}
         </div>
       </main>
+{/* フッター */}
+      <footer className="mt-8 text-center text-xs font-mono text-zinc-500 pb-4">
+        <p className="font-semibold text-zinc-400 tracking-wider">
+          Metronome Next Generation <span className="text-emerald-400/80">(metronome-ng)</span>
+        </p>
+        <p className="mt-1 text-[11px] text-zinc-600">
+          Build: <span className="text-zinc-400 font-mono">{__BUILD_VERSION__}</span>
+        </p>
+        <p className="mt-1 text-[10px] text-zinc-600">
+          Designed for drummers & musicians &bull; MIT License
+        </p>
+      </footer>
     </div>
   );
 }
