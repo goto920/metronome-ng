@@ -67,7 +67,8 @@ npm run build
 npm run deploy
 ```
 
-📄 License / ライセンス
-MIT License © 2026 KG Goto
+## 📄 License / ライセンス
+MIT License © 2026 goto920 (Kunio Goto)
+
 Drum grooves based on the concepts from Survival Guide for the Modern Drummer by Jim Riley.
 
