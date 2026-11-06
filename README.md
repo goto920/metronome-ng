@@ -68,7 +68,14 @@ npm run deploy
 ```
 
 ## 📄 License / ライセンス
-MIT License © 2026 goto920 (Kunio Goto)
+MIT License
 
 Drum grooves based on the concepts from Survival Guide for the Modern Drummer by Jim Riley.
 
+## 👏 Credits & Acknowledgments
+
+Author: Kunio Goto (@goto920)
+
+Development Assistance: Developed with the assistance of Google Gemini (AI Studio)
+
+以上
