@@ -65,6 +65,7 @@ npm run build
 
 # GitHub Pages へのデプロイ
 npm run deploy
+```
 
 📄 License / ライセンス
 MIT License © 2026 KG Goto
