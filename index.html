@@ -1,12 +1,21 @@
 <!doctype html>
-<html lang="en">
+<html lang="ja">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>metronome-ng</title>
+    <link rel="icon" type="image/x-icon" href="./favicon.ico" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Metronome Next Generation</title>
+
+    <!-- ★ iPhone / iPad 向け PWA フルスクリーン設定 -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Metronome-NG" />
+    <link rel="apple-touch-icon" href="./pwa-192x192.png" />
+
+    <!-- テーマカラー（ブラウザのツールバー色を黒に） -->
+    <meta name="theme-color" content="#09090b" />
   </head>
-  <body>
+  <body class="bg-zinc-950 text-zinc-100">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

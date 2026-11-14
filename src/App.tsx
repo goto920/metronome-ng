@@ -1,10 +1,12 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { Play, Square, Bell, Disc3, Volume2, Globe } from 'lucide-react';
 import { useMetronome } from './hooks/useMetronome';
+import { useWakeLock } from './hooks/useWakeLock';
+import { useSetlist, type SetlistSong } from './hooks/useSetlist';
 import { PracticePanel } from './components/PracticePanel';
+import { SetlistPanel } from './components/SetlistPanel';
 import { CLICK_CATEGORIES, categorizeClickPattern } from './utils/patternCategorizer';
 import { translations, getInitialLang, type Lang } from './utils/i18n';
-import { useWakeLock } from './hooks/useWakeLock';
 
 export default function App() {
   const [lang, setLang] = useState<Lang>(getInitialLang);
@@ -28,6 +30,7 @@ export default function App() {
     filteredDrumPatterns,
     drumGenres,
     clickPatterns,
+    drumPatterns,
     setMode,
     selectClickPattern,
     selectDrumPattern,
@@ -38,13 +41,76 @@ export default function App() {
     tapTempo,
   } = useMetronome();
 
-  // ★再生中は画面スリープを防止する
+  // 画面スリープ防止 (Screen Wake Lock)
   useWakeLock(isPlaying);
+
+  // セットリスト管理フック
+  const {
+    setlists,
+    activeList,
+    activeSongId,
+    setActiveListId,
+    setActiveSongId,
+    createSetlist,
+    deleteSetlist,
+    resetSampleList,
+    addCurrentSong,
+    deleteSong,
+    moveSong,
+    getAdjacentSong,
+  } = useSetlist();
 
   const toggleLang = () => {
     const next: Lang = lang === 'ja' ? 'en' : 'ja';
     setLang(next);
     localStorage.setItem('metronome_lang', next);
+  };
+
+  // ★セットリストから曲をロードする処理
+  const loadSong = useCallback((song: SetlistSong) => {
+    setActiveSongId(song.id);
+    setBpm(song.bpm);
+
+    if (song.mode === 'drums') {
+      const found = drumPatterns.find((p) => p.name === song.patternName) || drumPatterns[0];
+      setMode('drums');
+      selectDrumPattern(found);
+    } else {
+      const found = clickPatterns.find((p) => p.name === song.patternName) || clickPatterns[0];
+      setMode('metronome');
+      selectClickPattern(found);
+    }
+
+    if (song.swingVal !== undefined) {
+      updateConfig({ swingVal: song.swingVal });
+    }
+    if (song.metroSound) {
+      updateConfig({ metroSound: song.metroSound });
+    }
+  }, [drumPatterns, clickPatterns, setBpm, setMode, selectDrumPattern, selectClickPattern, updateConfig, setActiveSongId]);
+
+  // NEXT / PREV
+  const nextSong = getAdjacentSong('next');
+  const prevSong = getAdjacentSong('prev');
+
+  const handleNext = () => {
+    if (nextSong) loadSong(nextSong);
+  };
+
+  const handlePrev = () => {
+    if (prevSong) loadSong(prevSong);
+  };
+
+  // 現在の設定を曲として保存
+  const handleAddCurrent = (title: string) => {
+    addCurrentSong(
+      title,
+      bpm,
+      mode,
+      config.pattern,
+      config.metroSound,
+      config.swingVal
+    );
   };
 
   if (isLoading) {
@@ -70,7 +136,7 @@ export default function App() {
     <div className="flex min-h-screen flex-col items-center bg-zinc-950 text-zinc-100 select-none px-4 py-3 pb-8">
       {/* アプリケーション枠（中央寄せコンテナ） */}
       <div className="flex w-full max-w-md flex-1 flex-col justify-between gap-4">
-        {/* 1. ヘッダー（枠内配置：ロゴ・小節番号・言語切替） */}
+        {/* 1. ヘッダー */}
         <header className="flex items-center justify-between border-b border-zinc-800/80 pb-3 pt-1">
           <h1 className="text-lg font-black tracking-wider text-emerald-400">
             METRONOME<span className="text-zinc-500">-NG</span>
@@ -88,7 +154,6 @@ export default function App() {
               )}
             </div>
 
-            {/* 言語切り替えトグル */}
             <button
               onClick={toggleLang}
               className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 active:bg-zinc-600 text-xs font-bold text-zinc-200 border border-zinc-700 transition-colors"
@@ -184,7 +249,6 @@ export default function App() {
             className="w-full h-3 bg-zinc-800 rounded-lg appearance-none cursor-pointer accent-emerald-500 mt-1"
           />
 
-          {/* マスター音量 */}
           <div className="flex items-center gap-2 w-full pt-1 px-1">
             <Volume2 className="w-4 h-4 text-zinc-400 shrink-0" />
             <input
@@ -202,7 +266,7 @@ export default function App() {
           </div>
         </div>
 
-        {/* 4. クイック小節タイマー（Pre-count: ∞ / 2小節 / 4小節 / 8小節 / 16小節） */}
+        {/* 4. クイック小節タイマー（Pre-count: ∞ / 2 / 4 / 8 / 16） */}
         <div className="space-y-1">
           <div className="flex justify-between items-center px-1">
             <span className="text-[10px] font-bold text-zinc-400 tracking-wider">
@@ -432,7 +496,30 @@ export default function App() {
           )}
         </div>
 
-        {/* 7. 練習コントロールパネル（ドロワー） */}
+       {/* 7. セットリストパネル */}
+        <SetlistPanel
+          setlists={setlists}
+          activeList={activeList}
+          activeSongId={activeSongId}
+          currentBpm={bpm}
+          currentPatternName={config.pattern.name}
+          currentMode={mode}
+          onSelectList={setActiveListId}
+          onSelectSong={loadSong}
+          onCreateList={createSetlist}
+          onDeleteList={deleteSetlist}
+          onResetSamples={resetSampleList}
+          onAddCurrent={handleAddCurrent}
+          onDeleteSong={deleteSong}
+          onMoveSong={moveSong}
+          onNextSong={handleNext}
+          onPrevSong={handlePrev}
+          hasNext={!!nextSong}
+          hasPrev={!!prevSong}
+          lang={lang}
+        />
+
+        {/* 8. 練習コントロールパネル */}
         <PracticePanel
           config={config}
           updateConfig={updateConfig}
@@ -442,7 +529,7 @@ export default function App() {
           lang={lang}
         />
 
-        {/* 8. フッター */}
+        {/* 9. フッター */}
         <footer className="mt-4 text-center text-xs font-mono text-zinc-500 pb-2">
           <p className="font-semibold text-zinc-400 tracking-wider">
             Metronome Next Generation <span className="text-emerald-400/80">(metronome-ng)</span>
