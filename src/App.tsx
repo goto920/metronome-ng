@@ -1,16 +1,45 @@
-import { useState, useCallback } from 'react';
-import { Play, Square, Bell, Disc3, Volume2, Globe } from 'lucide-react';
+import { useState, useCallback, useEffect } from 'react';
+import { Play, Square, Bell, Disc3, Volume2, Globe, HelpCircle, RefreshCw } from 'lucide-react';
+import { useRegisterSW } from 'virtual:pwa-register/react';
 import { useMetronome } from './hooks/useMetronome';
 import { useWakeLock } from './hooks/useWakeLock';
 import { useSetlist, type SetlistSong } from './hooks/useSetlist';
 import { PracticePanel } from './components/PracticePanel';
 import { SetlistPanel } from './components/SetlistPanel';
+import { HelpModal } from './components/HelpModal';
 import { CLICK_CATEGORIES, categorizeClickPattern } from './utils/patternCategorizer';
 import { translations, getInitialLang, type Lang } from './utils/i18n';
 
 export default function App() {
   const [lang, setLang] = useState<Lang>(getInitialLang);
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
   const t = translations[lang];
+
+  // PWA スマート更新検知フック (virtual:pwa-register/react)
+  const {
+    needRefresh: [needRefresh],
+    updateServiceWorker,
+  } = useRegisterSW({
+    onRegisteredSW(_swUrl, r) {
+      if (r) {
+        // 1時間おきにバックグラウンドで SW の更新をチェック
+        setInterval(() => {
+          r.update();
+        }, 60 * 60 * 1000);
+      }
+    },
+  });
+
+  // スマホで他のアプリから戻ってきた時 (visibilitychange) に自動チェック
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible' && navigator.serviceWorker) {
+        navigator.serviceWorker.getRegistration().then((reg) => reg?.update());
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.exitPointerLock?.(); // cleanup
+  }, []);
 
   const {
     isLoading,
@@ -66,7 +95,6 @@ export default function App() {
     localStorage.setItem('metronome_lang', next);
   };
 
-  // ★セットリストから曲をロードする処理
   const loadSong = useCallback((song: SetlistSong) => {
     setActiveSongId(song.id);
     setBpm(song.bpm);
@@ -89,7 +117,6 @@ export default function App() {
     }
   }, [drumPatterns, clickPatterns, setBpm, setMode, selectDrumPattern, selectClickPattern, updateConfig, setActiveSongId]);
 
-  // NEXT / PREV
   const nextSong = getAdjacentSong('next');
   const prevSong = getAdjacentSong('prev');
 
@@ -101,7 +128,6 @@ export default function App() {
     if (prevSong) loadSong(prevSong);
   };
 
-  // 現在の設定を曲として保存
   const handleAddCurrent = (title: string) => {
     addCurrentSong(
       title,
@@ -133,7 +159,28 @@ export default function App() {
   const { pattern } = config;
 
   return (
-    <div className="flex min-h-screen flex-col items-center bg-zinc-950 text-zinc-100 select-none px-4 py-3 pb-8">
+    <div className="flex min-h-screen flex-col items-center bg-zinc-950 text-zinc-100 select-none px-4 py-3 pb-8 relative">
+{/* ★ PWA 新バージョン更新通知バナー (audioplayer-ng 共通の確実な即時リロード構成) */}
+      {needRefresh && (
+        <div className="fixed bottom-6 left-4 right-4 z-[9999] mx-auto max-w-sm flex items-center justify-between gap-3 bg-emerald-500 text-zinc-950 px-4 py-3 rounded-2xl shadow-2xl border-2 border-white pointer-events-auto">
+          <div className="flex items-center gap-2 font-bold text-xs">
+            <RefreshCw className="w-4 h-4 animate-spin shrink-0" />
+            <span>{t.pwaUpdateTitle}</span>
+          </div>
+          <button
+            type="button"
+            onClick={async () => {
+              await updateServiceWorker(true);
+              window.location.reload();
+            }}
+            className="px-3.5 py-2 bg-zinc-950 text-emerald-400 rounded-xl text-xs font-black shadow-md active:scale-95 transition-all shrink-0 cursor-pointer hover:bg-zinc-800"
+          >
+            {t.pwaUpdateBtn}
+          </button>
+        </div>
+      )}
+
+
       {/* アプリケーション枠（中央寄せコンテナ） */}
       <div className="flex w-full max-w-md flex-1 flex-col justify-between gap-4">
         {/* 1. ヘッダー */}
@@ -142,7 +189,7 @@ export default function App() {
             METRONOME<span className="text-zinc-500">-NG</span>
           </h1>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2">
             <div className="flex items-center gap-1.5 text-xs font-mono text-zinc-400">
               <span>
                 {t.bar}: <strong className="text-emerald-400">{currentBar + 1}</strong>
@@ -154,12 +201,22 @@ export default function App() {
               )}
             </div>
 
+            {/* 言語切り替えボタン */}
             <button
               onClick={toggleLang}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 active:bg-zinc-600 text-xs font-bold text-zinc-200 border border-zinc-700 transition-colors"
+              className="flex items-center gap-1 px-2 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 active:bg-zinc-600 text-xs font-bold text-zinc-200 border border-zinc-700 transition-colors"
             >
               <Globe className="w-3.5 h-3.5 text-emerald-400" />
-              <span>{lang === 'ja' ? 'JP' : 'EN'}</span>
+              <span>{lang === 'ja' ? 'EN' : '日本語'}</span>
+            </button>
+
+            {/* ★ クイックガイド (? ボタン) */}
+            <button
+              onClick={() => setIsHelpOpen(true)}
+              className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 active:bg-zinc-600 text-zinc-300 border border-zinc-700 transition-colors"
+              title="Help"
+            >
+              <HelpCircle className="w-4 h-4 text-emerald-400" />
             </button>
           </div>
         </header>
@@ -496,7 +553,7 @@ export default function App() {
           )}
         </div>
 
-       {/* 7. セットリストパネル */}
+        {/* 7. セットリストパネル */}
         <SetlistPanel
           setlists={setlists}
           activeList={activeList}
@@ -542,6 +599,13 @@ export default function App() {
           </p>
         </footer>
       </div>
+
+      {/* ★クイックガイド モーダル (? ボタン) */}
+      <HelpModal
+        isOpen={isHelpOpen}
+        onClose={() => setIsHelpOpen(false)}
+        lang={lang}
+      />
     </div>
   );
 }

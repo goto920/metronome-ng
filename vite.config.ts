@@ -6,12 +6,26 @@ import { VitePWA } from 'vite-plugin-pwa';
 
 function getJstVersion(): string {
   const now = new Date();
-  const jstDate = new Date(now.getTime() + (9 * 60 - now.getTimezoneOffset()) * 60000);
-  const yyyy = jstDate.getFullYear();
-  const mm = String(jstDate.getMonth() + 1).padStart(2, '0');
-  const dd = String(jstDate.getDate()).padStart(2, '0');
-  const hh = String(jstDate.getHours()).padStart(2, '0');
-  const min = String(jstDate.getMinutes()).padStart(2, '0');
+  // Intl API を使って強制的に日本の現在日時を取得
+  const formatter = new Intl.DateTimeFormat('ja-JP', {
+    timeZone: 'Asia/Tokyo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+
+  const parts = formatter.formatToParts(now);
+  const getPart = (type: string) => parts.find((p) => p.type === type)?.value || '';
+
+  const yyyy = getPart('year');
+  const mm = getPart('month');
+  const dd = getPart('day');
+  const hh = getPart('hour');
+  const min = getPart('minute');
+
   return `v${yyyy}${mm}${dd}-${hh}${min}`;
 }
 
@@ -25,8 +39,8 @@ export default defineConfig({
     }),
 
     VitePWA({
-      registerType: 'autoUpdate',
-      includeAssets: ['favicon.ico', 'pwa-512x512.png', 'pwa-192x192.png', '**/*.mp3'],
+      registerType: 'prompt',
+      includeAssets: ['favicon.svg', 'pwa-512x512.png', 'pwa-192x192.png', '**/*.mp3'],
       manifest: {
         name: "KG's Metronome Next Generation",
         short_name: 'Metronome-NG',

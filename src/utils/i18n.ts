@@ -53,6 +53,34 @@ export const translations = {
     resetSamples: 'サンプル曲を初期化',
     resetConfirm: 'サンプル曲を初期状態に戻しますか？',
     saveHint: '現在の画面設定で曲を登録',
+    // PWA 更新通知
+    pwaUpdateTitle: '✨ 新しいバージョンが利用可能です',
+    pwaUpdateBtn: '今すぐ更新',
+    // クイックガイド (Help Modal)
+    helpTitle: 'クイックガイド & 特徴',
+    helpClose: '閉じる',
+    helpContent: [
+      {
+        title: '🎯 ズレない高精度発音 (Lookahead スケジューラ)',
+        desc: 'Web Audio APIのハードウェア時計とWeb Workerを組み合わせた二重時計方式により、スマホやPCの負荷に関係なく完全なジャストタイミングで発音します。',
+      },
+      {
+        title: '🥁 プロ仕様の生音グルーヴ',
+        desc: '本物の生ドラムセットからサンプリングした高音質サウンドと、Jim Riley氏の教則本に基づく200以上のドラムパターンを搭載しています。',
+      },
+      {
+        title: '🔀 スウィング ＆ テンポ自動加減速',
+        desc: 'ハネ具合（シャッフル）の比率調整や、指定小節ごとにBPMを自動で上げ下げする機能で基礎練習を強力にサポートします。',
+      },
+      {
+        title: '🔇 ランダム小節ミュート（体内時計特訓）',
+        desc: '指定した確率で突然音が消えるため、自分のノリだけで正確にキープできているかをチェックするシビアな練習が可能です。',
+      },
+      {
+        title: '地下スタジオ・完全オフライン対応 (PWA)',
+        desc: '一度アクセスすれば電波のない防音室でも完全に動作します。「ホーム画面に追加」することで全画面アプリとして起動します。',
+      },
+    ],
   },
   en: {
     metronome: 'METRONOME',
@@ -106,6 +134,34 @@ export const translations = {
     resetSamples: 'Reset Sample Tracks',
     resetConfirm: 'Reset sample tracks to original?',
     saveHint: 'Saves current screen settings',
+    // PWA Update
+    pwaUpdateTitle: '✨ New version available',
+    pwaUpdateBtn: 'Update Now',
+    // Quick Guide
+    helpTitle: 'Quick Guide & Features',
+    helpClose: 'Close',
+    helpContent: [
+      {
+        title: '🎯 Rock-Solid Timing (Lookahead Scheduler)',
+        desc: 'Combines Web Audio API hardware clock with Web Workers to ensure sample-accurate precision regardless of device load.',
+      },
+      {
+        title: '🥁 Real Drum Kit Grooves',
+        desc: 'High-quality samples from a real acoustic kit and 200+ drum patterns based on Jim Riley’s acclaimed method book.',
+      },
+      {
+        title: '🔀 Swing Control & Auto Tempo Up/Down',
+        desc: 'Fine-tune shuffle/swing ratios and automatically increment/decrement BPM every X bars for rigorous practice.',
+      },
+      {
+        title: '🔇 Random Bar Mute (Time Keeping Drill)',
+        desc: 'Mutes bars randomly based on probability to test and strengthen your inner internal clock.',
+      },
+      {
+        title: '地下 Offline & Basement Ready (PWA)',
+        desc: 'Works completely offline in signal-free basement studios. Add to home screen for a native app experience.',
+      },
+    ],
   },
 } as const;
 
