@@ -26,7 +26,7 @@ export default defineConfig({
 
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.ico', '**/*.mp3'],
+      includeAssets: ['favicon.ico', 'pwa-512x512.png', 'pwa-192x192.png', '**/*.mp3'],
       manifest: {
         name: "KG's Metronome Next Generation",
         short_name: 'Metronome-NG',
