@@ -243,6 +243,7 @@ export function useMetronome() {
     filteredDrumPatterns,
     drumGenres: DRUM_GENRES,
     clickPatterns,
+    drumPatterns,
     setMode,
     selectClickPattern,
     selectDrumPattern,
