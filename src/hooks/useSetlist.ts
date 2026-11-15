@@ -22,16 +22,24 @@ export interface SetlistData {
 // ★キーを v2 に変更して古いテスト用キャッシュを一掃！
 const STORAGE_KEY = 'metronome_ng_setlists_v2';
 
+// サンプル曲の生成関数（table データを確実に引き継ぐように修正）
 export function createSampleSongs(): SetlistSong[] {
   return rawSetListSample.items.map((item: any, idx: number) => {
+    const isLoop = !!item.table && item.table.length > 0;
     const isDrum = item.bar?.type === 'drumkit';
+    
     return {
       id: `sample_song_${idx}`,
       title: item.song,
       bpm: typeof item.bpm === 'string' ? parseFloat(item.bpm) : item.bpm,
-      mode: isDrum ? 'drums' : 'metronome',
-      patternName: item.bar ? item.bar.name : '4/4',
+      mode: isLoop ? 'loop' : (isDrum ? 'drums' : 'metronome'),
+      patternName: isLoop ? 'Odd-Meter Loop' : (item.bar ? item.bar.name : '4/4'),
       swingVal: item.bar?.swingVal ?? 1.5,
+      // ★ ここで json に含まれる変拍子テーブルを確実にコピーする
+      table: item.table ? item.table.map((t: any) => ({
+        bar: t.bar,
+        repeat: t.repeat ?? 1,
+      })) : undefined,
     };
   });
 }
@@ -149,10 +157,11 @@ export function useSetlist() {
   const addCurrentSong = useCallback((
     title: string,
     bpm: number,
-    mode: 'metronome' | 'drums',
+    mode: 'metronome' | 'drums' | 'loop',
     pattern: MetronomePattern,
     metroSound: string,
-    swingVal: number
+    swingVal: number,
+    table?: LoopTableRow[] // ★追加
   ) => {
     if (!title.trim() || !activeList) return;
 
@@ -161,9 +170,10 @@ export function useSetlist() {
       title: title.trim(),
       bpm,
       mode,
-      patternName: pattern.name,
+      patternName: mode === 'loop' ? 'Odd-Meter Loop' : pattern.name,
       metroSound: mode === 'metronome' ? metroSound : undefined,
       swingVal,
+      table, // ★追加
     };
 
     const next = setlists.map((l) => {

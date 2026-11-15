@@ -6,9 +6,11 @@ import { useWakeLock } from './hooks/useWakeLock';
 import { useSetlist, type SetlistSong } from './hooks/useSetlist';
 import { PracticePanel } from './components/PracticePanel';
 import { SetlistPanel } from './components/SetlistPanel';
+import { CustomLoopPanel } from './components/CustomLoopPanel';
 import { HelpModal } from './components/HelpModal';
 import { CLICK_CATEGORIES, categorizeClickPattern } from './utils/patternCategorizer';
 import { translations, getInitialLang, type Lang } from './utils/i18n';
+import type { LoopTableRow } from './types/metronome';
 
 export default function App() {
   const [lang, setLang] = useState<Lang>(getInitialLang);
@@ -22,7 +24,6 @@ export default function App() {
   } = useRegisterSW({
     onRegisteredSW(_swUrl, r) {
       if (r) {
-        // 1時間おきにバックグラウンドで SW の更新をチェック
         setInterval(() => {
           r.update();
         }, 60 * 60 * 1000);
@@ -38,7 +39,7 @@ export default function App() {
       }
     };
     document.addEventListener('visibilitychange', handleVisibility);
-    return () => document.exitPointerLock?.(); // cleanup
+    return () => document.exitPointerLock?.();
   }, []);
 
   const {
@@ -60,6 +61,15 @@ export default function App() {
     drumGenres,
     clickPatterns,
     drumPatterns,
+    // 変拍子カスタムループ用
+    loopTable,
+    isPlayingLoop,
+    loopStatus,
+    addLoopRow,
+    deleteLoopRow,
+    togglePlayLoop,
+    rewindLoop,
+    setLoopTableExternal,
     setMode,
     selectClickPattern,
     selectDrumPattern,
@@ -71,7 +81,7 @@ export default function App() {
   } = useMetronome();
 
   // 画面スリープ防止 (Screen Wake Lock)
-  useWakeLock(isPlaying);
+  useWakeLock(isPlaying || isPlayingLoop);
 
   // セットリスト管理フック
   const {
@@ -99,7 +109,23 @@ export default function App() {
     setActiveSongId(song.id);
     setBpm(song.bpm);
 
-    if (song.mode === 'drums') {
+    if (song.mode === 'loop' && song.table) {
+      // ★ 変拍子ループ曲の場合、カスタムループテーブルに流し込む
+      setLoopTableExternal(song.table);
+      
+      if (song.table.length > 0 && song.table[0].bar) {
+        const firstBar = song.table[0].bar;
+        if (firstBar.type === 'drumkit') {
+          setMode('drums');
+          const found = drumPatterns.find((p) => p.name === firstBar.name) || firstBar;
+          selectDrumPattern(found);
+        } else {
+          setMode('metronome');
+          const found = clickPatterns.find((p) => p.name === firstBar.name) || firstBar;
+          selectClickPattern(found);
+        }
+      }
+    } else if (song.mode === 'drums') {
       const found = drumPatterns.find((p) => p.name === song.patternName) || drumPatterns[0];
       setMode('drums');
       selectDrumPattern(found);
@@ -115,7 +141,7 @@ export default function App() {
     if (song.metroSound) {
       updateConfig({ metroSound: song.metroSound });
     }
-  }, [drumPatterns, clickPatterns, setBpm, setMode, selectDrumPattern, selectClickPattern, updateConfig, setActiveSongId]);
+  }, [drumPatterns, clickPatterns, setBpm, setMode, selectDrumPattern, selectClickPattern, updateConfig, setActiveSongId, setLoopTableExternal]);
 
   const nextSong = getAdjacentSong('next');
   const prevSong = getAdjacentSong('prev');
@@ -128,6 +154,7 @@ export default function App() {
     if (prevSong) loadSong(prevSong);
   };
 
+  // ★ 欠落していた handleAddCurrent の定義を追加！
   const handleAddCurrent = (title: string) => {
     addCurrentSong(
       title,
@@ -136,6 +163,21 @@ export default function App() {
       config.pattern,
       config.metroSound,
       config.swingVal
+    );
+  };
+
+  // ★ カスタムループをセットリストに保存するための関数
+  const handleSaveLoopAsSong = (title: string, table: LoopTableRow[]) => {
+    if (!activeList || table.length === 0) return;
+    // ループ曲としてセットリストへ追加
+    addCurrentSong(
+      title,
+      bpm,
+      'loop',
+      config.pattern,
+      config.metroSound,
+      config.swingVal,
+      table
     );
   };
 
@@ -160,11 +202,11 @@ export default function App() {
 
   return (
     <div className="flex min-h-screen flex-col items-center bg-zinc-950 text-zinc-100 select-none px-4 py-3 pb-8 relative">
-{/* ★ PWA 新バージョン更新通知バナー (audioplayer-ng 共通の確実な即時リロード構成) */}
+      {/* PWA 新バージョン更新通知バナー */}
       {needRefresh && (
-        <div className="fixed bottom-6 left-4 right-4 z-[9999] mx-auto max-w-sm flex items-center justify-between gap-3 bg-emerald-500 text-zinc-950 px-4 py-3 rounded-2xl shadow-2xl border-2 border-white pointer-events-auto">
-          <div className="flex items-center gap-2 font-bold text-xs">
-            <RefreshCw className="w-4 h-4 animate-spin shrink-0" />
+        <div className="fixed bottom-6 left-4 right-4 z-[9999] mx-auto max-w-sm flex items-center justify-between gap-3 bg-zinc-900 text-zinc-100 px-4 py-3 rounded-2xl shadow-2xl border border-emerald-500/50 pointer-events-auto">
+          <div className="flex items-center gap-2 font-medium text-xs text-zinc-300">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
             <span>{t.pwaUpdateTitle}</span>
           </div>
           <button
@@ -173,13 +215,12 @@ export default function App() {
               await updateServiceWorker(true);
               window.location.reload();
             }}
-            className="px-3.5 py-2 bg-zinc-950 text-emerald-400 rounded-xl text-xs font-black shadow-md active:scale-95 transition-all shrink-0 cursor-pointer hover:bg-zinc-800"
+            className="px-3 py-1.5 bg-emerald-500 text-zinc-950 rounded-xl text-xs font-bold shadow active:scale-95 transition-all shrink-0 cursor-pointer hover:bg-emerald-400"
           >
             {t.pwaUpdateBtn}
           </button>
         </div>
       )}
-
 
       {/* アプリケーション枠（中央寄せコンテナ） */}
       <div className="flex w-full max-w-md flex-1 flex-col justify-between gap-4">
@@ -189,7 +230,7 @@ export default function App() {
             METRONOME<span className="text-zinc-500">-NG</span>
           </h1>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2.5">
             <div className="flex items-center gap-1.5 text-xs font-mono text-zinc-400">
               <span>
                 {t.bar}: <strong className="text-emerald-400">{currentBar + 1}</strong>
@@ -204,13 +245,13 @@ export default function App() {
             {/* 言語切り替えボタン */}
             <button
               onClick={toggleLang}
-              className="flex items-center gap-1 px-2 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 active:bg-zinc-600 text-xs font-bold text-zinc-200 border border-zinc-700 transition-colors"
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 active:bg-zinc-600 text-xs font-bold text-zinc-200 border border-zinc-700 transition-colors"
             >
               <Globe className="w-3.5 h-3.5 text-emerald-400" />
               <span>{lang === 'ja' ? 'EN' : '日本語'}</span>
             </button>
 
-            {/* ★ クイックガイド (? ボタン) */}
+            {/* クイックガイド (? ボタン) */}
             <button
               onClick={() => setIsHelpOpen(true)}
               className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 active:bg-zinc-600 text-zinc-300 border border-zinc-700 transition-colors"
@@ -224,7 +265,7 @@ export default function App() {
         {/* 2. ビートインジケーター（視覚フラッシュ） */}
         <div className="flex items-center justify-center gap-1.5">
           {Array.from({ length: pattern.numerator }).map((_, i) => {
-            const isActive = isPlaying && currentBeat === i;
+            const isActive = (isPlaying || isPlayingLoop) && currentBeat === i;
             const isFirstBeat = i === 0;
 
             let bgColor = 'bg-zinc-800';
@@ -580,13 +621,28 @@ export default function App() {
         <PracticePanel
           config={config}
           updateConfig={updateConfig}
-          isPlaying={isPlaying}
+          isPlaying={isPlaying || isPlayingLoop}
           timeRemaining={timeRemaining}
           barsRemaining={barsRemaining}
           lang={lang}
         />
 
-        {/* 9. フッター */}
+        {/* 9. 変拍子カスタムループパネル（一番下に配置） */}
+        <CustomLoopPanel
+          clickPatterns={clickPatterns}
+          drumPatterns={drumPatterns}
+          loopTable={loopTable}
+          onAddRow={addLoopRow}
+          onDeleteRow={deleteLoopRow}
+          onStartLoop={togglePlayLoop}
+          onRewindLoop={rewindLoop}
+          onSaveAsSong={handleSaveLoopAsSong}
+          isPlayingLoop={isPlayingLoop}
+          loopStatus={loopStatus}
+          lang={lang}
+        />
+
+        {/* 10. フッター */}
         <footer className="mt-4 text-center text-xs font-mono text-zinc-500 pb-2">
           <p className="font-semibold text-zinc-400 tracking-wider">
             Metronome Next Generation <span className="text-emerald-400/80">(metronome-ng)</span>
@@ -600,7 +656,7 @@ export default function App() {
         </footer>
       </div>
 
-      {/* ★クイックガイド モーダル (? ボタン) */}
+      {/* クイックガイド モーダル */}
       <HelpModal
         isOpen={isHelpOpen}
         onClose={() => setIsHelpOpen(false)}

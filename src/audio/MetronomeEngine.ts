@@ -1,5 +1,5 @@
 import { AudioManager } from './AudioManager';
-import type { MetronomePattern } from '../types/metronome';
+import type { MetronomePattern, LoopTableRow } from '../types/metronome';
 
 export interface MetronomeConfig {
   bpm: number;
@@ -17,7 +17,6 @@ export interface MetronomeConfig {
   muteProb: number;
   minBpm: number;
   maxBpm: number;
-  // タイマー設定 (0 = 無効)
   timerSeconds: number;
   timerBars: number;
 }
@@ -25,6 +24,7 @@ export interface MetronomeConfig {
 export type BeatCallback = (beat: number, bar: number, isMuted: boolean) => void;
 export type TempoChangeCallback = (newBpm: number) => void;
 export type TimerCallback = (timeRemaining: number, barsRemaining: number) => void;
+export type LoopStatusCallback = (seq: number, repeat: number, bar: number) => void;
 
 export class MetronomeEngine {
   private audioManager: AudioManager;
@@ -45,11 +45,19 @@ export class MetronomeEngine {
   private timeRemaining: number = 0;
   private barsRemaining: number = 0;
 
+  // ★ カスタムループ（シーケンサー）専用ステータス
+  private isLoopMode: boolean = false;
+  private loopTable: LoopTableRow[] = [];
+  private loopSeqIndex: number = 0;     // 現在のテーブル行
+  private loopRepeatCount: number = 1;  // 現在の行の繰り返し何回目か
+  private loopBarCount: number = 0;     // ループモードでのトータル小節数
+
   // コールバック
   public onBeat: BeatCallback | null = null;
   public onTempoChange: TempoChangeCallback | null = null;
   public onTimerTick: TimerCallback | null = null;
   public onTimerEnd: (() => void) | null = null;
+  public onLoopStatus: LoopStatusCallback | null = null; // ループの進捗通知
 
   constructor(initialConfig: MetronomeConfig) {
     this.audioManager = AudioManager.getInstance();
@@ -71,6 +79,7 @@ export class MetronomeEngine {
   }
 
   public updatePattern(newPattern: MetronomePattern, isDrums: boolean): void {
+    this.isLoopMode = false; // 通常パターンに変更されたらループモード解除
     this.config.pattern = newPattern;
     this.config.drumsOn = isDrums;
     this.config.swingVal = newPattern.swingVal !== undefined ? newPattern.swingVal : 1.5;
@@ -78,6 +87,26 @@ export class MetronomeEngine {
     if (this.currentNoteIndex >= newPattern.numerator) {
       this.currentNoteIndex = 0;
     }
+  }
+
+  /**
+   * ★ カスタムループ（シーケンサー）モードのセットと開始
+   */
+  public startCustomLoop(table: LoopTableRow[]): void {
+    if (!table || table.length === 0) return;
+
+    this.isLoopMode = true;
+    this.loopTable = table;
+    this.loopSeqIndex = 0;
+    this.loopRepeatCount = 1;
+    this.loopBarCount = 0;
+
+    // 最初の行のパターンを適用
+    const firstRow = table[0];
+    this.config.pattern = firstRow.bar;
+    this.config.swingVal = firstRow.bar.swingVal ?? 1.5;
+
+    this.start();
   }
 
   public async start(): Promise<void> {
@@ -91,13 +120,16 @@ export class MetronomeEngine {
     this.muteCount = 0;
     this.isMuted = false;
 
-    // タイマーの初期化
     this.startTime = this.audioManager.context.currentTime;
     this.timeRemaining = this.config.timerSeconds;
     this.barsRemaining = this.config.timerBars;
 
     this.nextNoteTime = this.startTime;
     this.worker?.postMessage('start');
+
+    if (this.isLoopMode) {
+      this.onLoopStatus?.(this.loopSeqIndex, this.loopRepeatCount, this.loopBarCount);
+    }
   }
 
   public stop(): void {
@@ -110,8 +142,7 @@ export class MetronomeEngine {
     try {
       const ctx = this.audioManager.context;
 
-      // 時間タイマーの更新
-      if (this.config.timerSeconds > 0) {
+      if (!this.isLoopMode && this.config.timerSeconds > 0) {
         const elapsed = ctx.currentTime - this.startTime;
         const remaining = Math.max(0, Math.ceil(this.config.timerSeconds - elapsed));
         if (remaining !== this.timeRemaining) {
@@ -155,6 +186,7 @@ export class MetronomeEngine {
     this.nextNoteTime += interval;
     this.currentNoteIndex++;
 
+    // 1小節（numerator拍）終わった瞬間
     if (this.currentNoteIndex >= numerator) {
       this.currentNoteIndex = 0;
       this.barCount++;
@@ -163,7 +195,33 @@ export class MetronomeEngine {
   }
 
   private handleBarTransition(): void {
-    // 1. 小節タイマーの処理
+    // A. カスタムループモードの場合の小節・行送り処理
+    if (this.isLoopMode && this.loopTable.length > 0) {
+      this.loopBarCount++;
+      const currentRow = this.loopTable[this.loopSeqIndex];
+
+      // 現在の行の指定リピート回数に達したか？
+      if (this.loopRepeatCount >= currentRow.repeat) {
+        // 次の行へ進む
+        this.loopSeqIndex++;
+        if (this.loopSeqIndex >= this.loopTable.length) {
+          this.loopSeqIndex = 0; // ループの先頭に戻る
+        }
+        this.loopRepeatCount = 1;
+
+        // 次の行のパターンを反映
+        const nextRow = this.loopTable[this.loopSeqIndex];
+        this.config.pattern = nextRow.bar;
+        this.config.swingVal = nextRow.bar.swingVal ?? 1.5;
+      } else {
+        this.loopRepeatCount++;
+      }
+
+      this.onLoopStatus?.(this.loopSeqIndex, this.loopRepeatCount, this.loopBarCount);
+      return;
+    }
+
+    // B. 通常モードの小節タイマー
     if (this.config.timerBars > 0) {
       this.barsRemaining = Math.max(0, this.config.timerBars - this.barCount);
       this.onTimerTick?.(this.timeRemaining, this.barsRemaining);
@@ -175,7 +233,7 @@ export class MetronomeEngine {
       }
     }
 
-    // 2. 自動テンポ加減速
+    // C. 自動テンポ加減速
     const { perBars, increment, minBpm, maxBpm, bpm } = this.config;
     if (perBars > 0 && this.barCount > 0 && this.barCount % perBars === 0) {
       let newBpm = Math.round((bpm + increment) * 10) / 10;
@@ -185,7 +243,7 @@ export class MetronomeEngine {
       this.onTempoChange?.(newBpm);
     }
 
-    // 3. ランダムミュート
+    // D. ランダムミュート
     const { muteBars, muteProb } = this.config;
     if (muteBars > 0 && muteProb > 0) {
       if (this.muteCount >= muteBars) {
@@ -224,7 +282,8 @@ export class MetronomeEngine {
       if (noteIndex % 2 === 1) noteGainFactor = evenVol;
     }
 
-    if (drumsOn && pattern.type === 'drumkit') {
+    // A. ドラムキット再生
+    if (pattern.type === 'drumkit') {
       const tracks = pattern.pattern;
       if (!tracks) return;
 
@@ -247,6 +306,7 @@ export class MetronomeEngine {
       return;
     }
 
+    // B. メトロノーム（Clicks）再生
     const tracks = pattern.pattern;
     if (!tracks || tracks.length === 0) return;
 
