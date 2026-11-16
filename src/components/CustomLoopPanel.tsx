@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Repeat, ChevronDown, ChevronUp, Plus, Trash2, Play, Square, RotateCcw, Layers, BookmarkPlus } from 'lucide-react';
+import { ChevronDown, ChevronUp, Plus, Trash2, Play, Square, RotateCcw, Layers, BookmarkPlus } from 'lucide-react';
 import type { MetronomePattern, LoopTableRow } from '../types/metronome';
 import { CLICK_CATEGORIES, categorizeClickPattern } from '../utils/patternCategorizer';
-import { translations, type Lang } from '../utils/i18n';
+// import { translations, type Lang } from '../utils/i18n';
+import { type Lang } from '../utils/i18n';
 
 interface CustomLoopPanelProps {
   clickPatterns: MetronomePattern[];
@@ -37,7 +38,7 @@ export function CustomLoopPanel({
   const [repeatCount, setRepeatCount] = useState(1);
   const [loopSongTitle, setLoopSongTitle] = useState('');
 
-  const t = translations[lang];
+//  const t = translations[lang]; // Not used
   const currentPatterns = selectedType === 'click' ? clickPatterns : drumPatterns;
 
   const handleAddRow = (e: React.FormEvent) => {

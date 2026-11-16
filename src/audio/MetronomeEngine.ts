@@ -262,7 +262,7 @@ export class MetronomeEngine {
   }
 
   private scheduleNote(noteIndex: number, time: number): void {
-    const { pattern, masterVol, evenVol, voiceOn, voice, metroSound, drumsOn } = this.config;
+    const { pattern, masterVol, evenVol, voiceOn, voice, metroSound } = this.config;
     const ctx = this.audioManager.context;
     const masterGain = masterVol / 100;
 

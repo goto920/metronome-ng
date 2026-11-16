@@ -1,16 +1,18 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { MetronomePattern } from '../types/metronome';
+import type { MetronomePattern, LoopTableRow } from '../types/metronome';
 import rawSetListSample from '../data/setListSample.json';
 
 export interface SetlistSong {
   id: string;
   title: string;
   bpm: number;
-  mode: 'metronome' | 'drums';
+  mode: 'metronome' | 'drums' | 'loop'; // ★ 'loop' を追加
   patternName: string;
   metroSound?: string;
   swingVal?: number;
+  table?: LoopTableRow[]; // ★ table を追加
 }
+
 
 export interface SetlistData {
   id: string;

@@ -206,7 +206,7 @@ export default function App() {
       {needRefresh && (
         <div className="fixed bottom-6 left-4 right-4 z-[9999] mx-auto max-w-sm flex items-center justify-between gap-3 bg-zinc-900 text-zinc-100 px-4 py-3 rounded-2xl shadow-2xl border border-emerald-500/50 pointer-events-auto">
           <div className="flex items-center gap-2 font-medium text-xs text-zinc-300">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
+            <RefreshCw className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
             <span>{t.pwaUpdateTitle}</span>
           </div>
           <button
@@ -224,41 +224,54 @@ export default function App() {
 
       {/* アプリケーション枠（中央寄せコンテナ） */}
       <div className="flex w-full max-w-md flex-1 flex-col justify-between gap-4">
-        {/* 1. ヘッダー */}
+       {/* 1. ヘッダー */}
         <header className="flex items-center justify-between border-b border-zinc-800/80 pb-3 pt-1">
           <h1 className="text-lg font-black tracking-wider text-emerald-400">
             METRONOME<span className="text-zinc-500">-NG</span>
           </h1>
 
-          <div className="flex items-center gap-2.5">
-            <div className="flex items-center gap-1.5 text-xs font-mono text-zinc-400">
-              <span>
-                {t.bar}: <strong className="text-emerald-400">{currentBar + 1}</strong>
-              </span>
+          <div className="flex items-center gap-3">
+            {/* 動的ステータス（小節数・ミュート状態） */}
+            <div className="flex items-center gap-1.5 text-xs font-mono text-zinc-400 bg-zinc-950 px-2.5 py-1 rounded-lg border border-zinc-800/80">
+              <span className="text-zinc-500">{t.bar}:</span>
+              <strong className="text-emerald-400">{currentBar + 1}</strong>
               {isMuted && (
-                <span className="bg-rose-500/20 text-rose-400 border border-rose-500/40 px-1.5 py-0.5 rounded font-bold animate-pulse text-[10px]">
+                <span className="text-rose-400 font-bold animate-pulse text-[10px] ml-1">
                   {t.muted}
                 </span>
               )}
             </div>
 
-            {/* 言語切り替えボタン */}
-            <button
-              onClick={toggleLang}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 active:bg-zinc-600 text-xs font-bold text-zinc-200 border border-zinc-700 transition-colors"
-            >
-              <Globe className="w-3.5 h-3.5 text-emerald-400" />
-              <span>{lang === 'ja' ? 'EN' : '日本語'}</span>
-            </button>
+            {/* 操作ボタングループ (言語、ヘルプ、リロード) */}
+            <div className="flex items-center gap-1.5">
+              {/* 言語切り替え */}
+              <button
+                onClick={toggleLang}
+                className="flex items-center gap-1 px-2 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 active:bg-zinc-600 text-xs font-bold text-zinc-200 border border-zinc-700 transition-colors"
+                title="Change Language"
+              >
+                <Globe className="w-3.5 h-3.5 text-emerald-400" />
+                <span>{lang === 'ja' ? 'EN' : '日本語'}</span>
+              </button>
 
-            {/* クイックガイド (? ボタン) */}
-            <button
-              onClick={() => setIsHelpOpen(true)}
-              className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 active:bg-zinc-600 text-zinc-300 border border-zinc-700 transition-colors"
-              title="Help"
-            >
-              <HelpCircle className="w-4 h-4 text-emerald-400" />
-            </button>
+              {/* ヘルプ (? ボタン) */}
+              <button
+                onClick={() => setIsHelpOpen(true)}
+                className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 active:bg-zinc-600 text-zinc-300 border border-zinc-700 transition-colors"
+                title="Help"
+              >
+                <HelpCircle className="w-4 h-4 text-emerald-400" />
+              </button>
+
+              {/* リロード (🔄 ボタン) */}
+              <button
+                onClick={() => window.location.reload()}
+                className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 active:bg-zinc-600 text-zinc-300 border border-zinc-700 transition-colors"
+                title="Reload App"
+              >
+                <RefreshCw className="w-4 h-4 text-emerald-400" />
+              </button>
+            </div>
           </div>
         </header>
 
