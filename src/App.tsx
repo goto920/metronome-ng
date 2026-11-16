@@ -93,7 +93,8 @@ export default function App() {
     createSetlist,
     deleteSetlist,
     resetSampleList,
-    addCurrentSong,
+    addSongToSpecificList, // ★ 修正: 特定リストへの追加関数
+    createNewListWithSong, // 新リスト作成とsong登録
     deleteSong,
     moveSong,
     getAdjacentSong,
@@ -105,14 +106,16 @@ export default function App() {
     localStorage.setItem('metronome_lang', next);
   };
 
+  // ★ セットリストから曲をロードする処理（変拍子ループの完全対応）
   const loadSong = useCallback((song: SetlistSong) => {
     setActiveSongId(song.id);
     setBpm(song.bpm);
 
     if (song.mode === 'loop' && song.table) {
-      // ★ 変拍子ループ曲の場合、カスタムループテーブルに流し込む
+      // 1. カスタムループテーブルをエンジンにセット
       setLoopTableExternal(song.table);
-      
+
+      // 2. 最初のエントリのパターンをメイン画面のプレビューにも反映
       if (song.table.length > 0 && song.table[0].bar) {
         const firstBar = song.table[0].bar;
         if (firstBar.type === 'drumkit') {
@@ -154,9 +157,11 @@ export default function App() {
     if (prevSong) loadSong(prevSong);
   };
 
-  // ★ 欠落していた handleAddCurrent の定義を追加！
+  // 通常の設定を曲として追加
   const handleAddCurrent = (title: string) => {
-    addCurrentSong(
+    if (!activeList) return;
+    addSongToSpecificList(
+      activeList.id,
       title,
       bpm,
       mode,
@@ -166,21 +171,36 @@ export default function App() {
     );
   };
 
-  // ★ カスタムループをセットリストに保存するための関数
-  const handleSaveLoopAsSong = (title: string, table: LoopTableRow[]) => {
-    if (!activeList || table.length === 0) return;
-    // ループ曲としてセットリストへ追加
-    addCurrentSong(
-      title,
-      bpm,
-      'loop',
-      config.pattern,
-      config.metroSound,
-      config.swingVal,
-      table
-    );
-  };
+  // ★ カスタムループをセットリストに保存するための関数（モーダル対応）
+const handleSaveLoopAsSong = (targetListId: string, newListName: string, title: string, table: LoopTableRow[]) => {
+    if (table.length === 0) return;
 
+    if (targetListId === 'new' && newListName.trim()) {
+      // 新規リスト作成 ＆ 曲追加を同時に実行！
+      createNewListWithSong(
+        newListName.trim(),
+        title,
+        bpm,
+        'loop',
+        config.pattern,
+        config.metroSound,
+        config.swingVal,
+        table
+      );
+    } else {
+      // 既存リストに追加
+      addSongToSpecificList(
+        targetListId,
+        title,
+        bpm,
+        'loop',
+        config.pattern,
+        config.metroSound,
+        config.swingVal,
+        table
+      );
+    }
+  };
   if (isLoading) {
     return (
       <div className="flex h-screen w-screen flex-col items-center justify-center bg-zinc-950 text-white">
@@ -206,7 +226,7 @@ export default function App() {
       {needRefresh && (
         <div className="fixed bottom-6 left-4 right-4 z-[9999] mx-auto max-w-sm flex items-center justify-between gap-3 bg-zinc-900 text-zinc-100 px-4 py-3 rounded-2xl shadow-2xl border border-emerald-500/50 pointer-events-auto">
           <div className="flex items-center gap-2 font-medium text-xs text-zinc-300">
-            <RefreshCw className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
+            <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
             <span>{t.pwaUpdateTitle}</span>
           </div>
           <button
@@ -224,14 +244,13 @@ export default function App() {
 
       {/* アプリケーション枠（中央寄せコンテナ） */}
       <div className="flex w-full max-w-md flex-1 flex-col justify-between gap-4">
-       {/* 1. ヘッダー */}
+        {/* 1. ヘッダー */}
         <header className="flex items-center justify-between border-b border-zinc-800/80 pb-3 pt-1">
           <h1 className="text-lg font-black tracking-wider text-emerald-400">
             METRONOME<span className="text-zinc-500">-NG</span>
           </h1>
 
           <div className="flex items-center gap-3">
-            {/* 動的ステータス（小節数・ミュート状態） */}
             <div className="flex items-center gap-1.5 text-xs font-mono text-zinc-400 bg-zinc-950 px-2.5 py-1 rounded-lg border border-zinc-800/80">
               <span className="text-zinc-500">{t.bar}:</span>
               <strong className="text-emerald-400">{currentBar + 1}</strong>
@@ -242,9 +261,7 @@ export default function App() {
               )}
             </div>
 
-            {/* 操作ボタングループ (言語、ヘルプ、リロード) */}
             <div className="flex items-center gap-1.5">
-              {/* 言語切り替え */}
               <button
                 onClick={toggleLang}
                 className="flex items-center gap-1 px-2 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 active:bg-zinc-600 text-xs font-bold text-zinc-200 border border-zinc-700 transition-colors"
@@ -254,7 +271,6 @@ export default function App() {
                 <span>{lang === 'ja' ? 'EN' : '日本語'}</span>
               </button>
 
-              {/* ヘルプ (? ボタン) */}
               <button
                 onClick={() => setIsHelpOpen(true)}
                 className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 active:bg-zinc-600 text-zinc-300 border border-zinc-700 transition-colors"
@@ -263,7 +279,6 @@ export default function App() {
                 <HelpCircle className="w-4 h-4 text-emerald-400" />
               </button>
 
-              {/* リロード (🔄 ボタン) */}
               <button
                 onClick={() => window.location.reload()}
                 className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 active:bg-zinc-600 text-zinc-300 border border-zinc-700 transition-colors"
@@ -275,7 +290,7 @@ export default function App() {
           </div>
         </header>
 
-        {/* 2. ビートインジケーター（視覚フラッシュ） */}
+        {/* 2. ビートインジケーター */}
         <div className="flex items-center justify-center gap-1.5">
           {Array.from({ length: pattern.numerator }).map((_, i) => {
             const isActive = (isPlaying || isPlayingLoop) && currentBeat === i;
@@ -312,42 +327,12 @@ export default function App() {
           </div>
 
           <div className="grid grid-cols-6 gap-1.5 w-full">
-            <button
-              onClick={() => setBpm(bpm - 5)}
-              className="py-2.5 rounded-lg bg-zinc-900 border border-zinc-800 active:bg-zinc-700 text-sm font-bold"
-            >
-              -5
-            </button>
-            <button
-              onClick={() => setBpm(bpm - 1)}
-              className="py-2.5 rounded-lg bg-zinc-900 border border-zinc-800 active:bg-zinc-700 text-sm font-bold"
-            >
-              -1
-            </button>
-            <button
-              onClick={() => setBpm(bpm - 0.1)}
-              className="py-2.5 rounded-lg bg-zinc-900 border border-zinc-800 active:bg-zinc-700 text-xs font-bold text-zinc-400"
-            >
-              -0.1
-            </button>
-            <button
-              onClick={() => setBpm(bpm + 0.1)}
-              className="py-2.5 rounded-lg bg-zinc-900 border border-zinc-800 active:bg-zinc-700 text-xs font-bold text-zinc-400"
-            >
-              +0.1
-            </button>
-            <button
-              onClick={() => setBpm(bpm + 1)}
-              className="py-2.5 rounded-lg bg-zinc-900 border border-zinc-800 active:bg-zinc-700 text-sm font-bold"
-            >
-              +1
-            </button>
-            <button
-              onClick={() => setBpm(bpm + 5)}
-              className="py-2.5 rounded-lg bg-zinc-900 border border-zinc-800 active:bg-zinc-700 text-sm font-bold"
-            >
-              +5
-            </button>
+            <button onClick={() => setBpm(bpm - 5)} className="py-2.5 rounded-lg bg-zinc-900 border border-zinc-800 active:bg-zinc-700 text-sm font-bold">-5</button>
+            <button onClick={() => setBpm(bpm - 1)} className="py-2.5 rounded-lg bg-zinc-900 border border-zinc-800 active:bg-zinc-700 text-sm font-bold">-1</button>
+            <button onClick={() => setBpm(bpm - 0.1)} className="py-2.5 rounded-lg bg-zinc-900 border border-zinc-800 active:bg-zinc-700 text-xs font-bold text-zinc-400">-0.1</button>
+            <button onClick={() => setBpm(bpm + 0.1)} className="py-2.5 rounded-lg bg-zinc-900 border border-zinc-800 active:bg-zinc-700 text-xs font-bold text-zinc-400">+0.1</button>
+            <button onClick={() => setBpm(bpm + 1)} className="py-2.5 rounded-lg bg-zinc-900 border border-zinc-800 active:bg-zinc-700 text-sm font-bold">+1</button>
+            <button onClick={() => setBpm(bpm + 5)} className="py-2.5 rounded-lg bg-zinc-900 border border-zinc-800 active:bg-zinc-700 text-sm font-bold">+5</button>
           </div>
 
           <input
@@ -377,7 +362,7 @@ export default function App() {
           </div>
         </div>
 
-        {/* 4. クイック小節タイマー（Pre-count: ∞ / 2 / 4 / 8 / 16） */}
+        {/* 4. クイック小節タイマー */}
         <div className="space-y-1">
           <div className="flex justify-between items-center px-1">
             <span className="text-[10px] font-bold text-zinc-400 tracking-wider">
@@ -645,11 +630,12 @@ export default function App() {
           clickPatterns={clickPatterns}
           drumPatterns={drumPatterns}
           loopTable={loopTable}
+          setlists={setlists} // ★ リスト選択モーダル用に追加
           onAddRow={addLoopRow}
           onDeleteRow={deleteLoopRow}
           onStartLoop={togglePlayLoop}
           onRewindLoop={rewindLoop}
-          onSaveAsSong={handleSaveLoopAsSong}
+          onSaveAsSong={handleSaveLoopAsSong} // ★ 既存/新規選べる保存ハンドラ
           isPlayingLoop={isPlayingLoop}
           loopStatus={loopStatus}
           lang={lang}

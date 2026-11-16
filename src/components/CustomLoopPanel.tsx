@@ -1,19 +1,20 @@
 import { useState } from 'react';
-import { ChevronDown, ChevronUp, Plus, Trash2, Play, Square, RotateCcw, Layers, BookmarkPlus } from 'lucide-react';
+import { ChevronDown, ChevronUp, Plus, Trash2, Play, Square, RotateCcw, Layers, BookmarkPlus, X } from 'lucide-react';
 import type { MetronomePattern, LoopTableRow } from '../types/metronome';
+import type { SetlistData } from '../hooks/useSetlist';
 import { CLICK_CATEGORIES, categorizeClickPattern } from '../utils/patternCategorizer';
-// import { translations, type Lang } from '../utils/i18n';
 import { type Lang } from '../utils/i18n';
 
 interface CustomLoopPanelProps {
   clickPatterns: MetronomePattern[];
   drumPatterns: MetronomePattern[];
   loopTable: LoopTableRow[];
+  setlists: SetlistData[]; // ★ 追加
   onAddRow: (bar: MetronomePattern, repeat: number) => void;
   onDeleteRow: (index: number) => void;
   onStartLoop: () => void;
   onRewindLoop: () => void;
-  onSaveAsSong: (title: string, table: LoopTableRow[]) => void; // ★セットリストへ保存
+  onSaveAsSong: (targetListId: string, newListName: string, title: string, table: LoopTableRow[]) => void; // ★ 拡張
   isPlayingLoop: boolean;
   loopStatus: { seq: number; repeat: number; bar: number };
   lang: Lang;
@@ -23,6 +24,7 @@ export function CustomLoopPanel({
   clickPatterns,
   drumPatterns,
   loopTable,
+  setlists,
   onAddRow,
   onDeleteRow,
   onStartLoop,
@@ -36,9 +38,13 @@ export function CustomLoopPanel({
   const [selectedType, setSelectedType] = useState<'click' | 'drum'>('click');
   const [selectedPatternName, setSelectedPatternName] = useState(clickPatterns[0]?.name || '');
   const [repeatCount, setRepeatCount] = useState(1);
-  const [loopSongTitle, setLoopSongTitle] = useState('');
 
-//  const t = translations[lang]; // Not used
+  // 保存モーダル用のステート
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [loopSongTitle, setLoopSongTitle] = useState('');
+  const [targetListId, setTargetListId] = useState(setlists[0]?.id || '');
+  const [newListName, setNewListName] = useState('');
+
   const currentPatterns = selectedType === 'click' ? clickPatterns : drumPatterns;
 
   const handleAddRow = (e: React.FormEvent) => {
@@ -49,15 +55,25 @@ export function CustomLoopPanel({
     }
   };
 
-  const handleSaveLoop = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!loopSongTitle.trim() || loopTable.length === 0) return;
-    onSaveAsSong(loopSongTitle, loopTable);
+  const handleOpenModal = () => {
+    if (loopTable.length === 0) return;
+    setTargetListId(setlists[0]?.id || '');
+    setNewListName('');
     setLoopSongTitle('');
+    setIsModalOpen(true);
+  };
+
+  const handleModalSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!loopSongTitle.trim()) return;
+    onSaveAsSong(targetListId, newListName, loopSongTitle, loopTable);
+    setIsModalOpen(false);
+    setLoopSongTitle('');
+    setNewListName('');
   };
 
   return (
-    <div className="bg-zinc-900/90 border border-zinc-800 rounded-2xl overflow-hidden shadow-xl">
+    <div className="bg-zinc-900/90 border border-zinc-800 rounded-2xl overflow-hidden shadow-xl relative">
       {/* 1. 開閉トグルヘッダー */}
       <button
         onClick={() => setIsOpen(!isOpen)}
@@ -256,26 +272,105 @@ export function CustomLoopPanel({
             </div>
           </form>
 
-          {/* D. ★現在のカスタムループをセットリスト（曲）として保存するフォーム */}
+          {/* D. セットリストへ保存ボタン（モーダル起動） */}
           {loopTable.length > 0 && (
-            <form onSubmit={handleSaveLoop} className="flex gap-2 pt-2.5 border-t border-zinc-800">
-              <input
-                type="text"
-                placeholder={lang === 'ja' ? 'ループ曲名を入力...' : 'Loop song title...'}
-                value={loopSongTitle}
-                onChange={(e) => setLoopSongTitle(e.target.value)}
-                className="flex-1 bg-zinc-950 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500"
-              />
+            <div className="pt-2.5 border-t border-zinc-800">
               <button
-                type="submit"
-                className="flex items-center gap-1 px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs transition-colors shrink-0 shadow"
-                title="Save to Active Setlist"
+                type="button"
+                onClick={handleOpenModal}
+                className="w-full flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs transition-colors shadow"
               >
-                <BookmarkPlus className="w-3.5 h-3.5" />
-                <span>{lang === 'ja' ? 'セットリストに保存' : 'Save to List'}</span>
+                <BookmarkPlus className="w-4 h-4" />
+                <span>{lang === 'ja' ? 'セットリストに保存...' : 'Save to Setlist...'}</span>
               </button>
-            </form>
+            </div>
           )}
+        </div>
+      )}
+
+      {/* ★ セットリスト選択・新規作成モーダル */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm animate-fadeIn">
+          <div className="w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl overflow-hidden p-5 space-y-4">
+            <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+              <h3 className="text-sm font-black text-white">
+                {lang === 'ja' ? '変拍子ループをセットリストに保存' : 'Save Odd-Meter Loop'}
+              </h3>
+              <button
+                onClick={() => setIsModalOpen(false)}
+                className="p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleModalSubmit} className="space-y-3 text-xs">
+              <div>
+                <label className="text-zinc-400 block mb-1 font-bold">
+                  {lang === 'ja' ? 'ループ曲名' : 'Loop Song Title'}
+                </label>
+                <input
+                  type="text"
+                  placeholder={lang === 'ja' ? '例: プログレ大曲セクション' : 'e.g. Prog Section'}
+                  value={loopSongTitle}
+                  onChange={(e) => setLoopSongTitle(e.target.value)}
+                  className="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2 text-white"
+                  autoFocus
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="text-zinc-400 block mb-1 font-bold">
+                  {lang === 'ja' ? '保存先のセットリスト' : 'Target Setlist'}
+                </label>
+                <select
+                  value={targetListId}
+                  onChange={(e) => setTargetListId(e.target.value)}
+                  className="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2 text-white font-bold"
+                >
+                  {setlists.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name} ({l.songs.length} songs)
+                    </option>
+                  ))}
+                  <option value="new">➕ {lang === 'ja' ? '新規セットリストを作成...' : 'Create New Setlist...'}</option>
+                </select>
+              </div>
+
+              {targetListId === 'new' && (
+                <div>
+                  <label className="text-zinc-400 block mb-1 font-bold">
+                    {lang === 'ja' ? '新規セットリスト名' : 'New Setlist Name'}
+                  </label>
+                  <input
+                    type="text"
+                    placeholder={lang === 'ja' ? '例: ライブ用セトリ' : 'e.g. Live Set'}
+                    value={newListName}
+                    onChange={(e) => setNewListName(e.target.value)}
+                    className="w-full bg-zinc-950 border border-zinc-700 rounded-xl px-3 py-2 text-white"
+                    required
+                  />
+                </div>
+              )}
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  className="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-bold"
+                >
+                  {lang === 'ja' ? 'キャンセル' : 'Cancel'}
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-black shadow"
+                >
+                  {lang === 'ja' ? '保存する' : 'Save'}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>

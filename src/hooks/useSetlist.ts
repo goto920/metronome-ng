@@ -6,13 +6,12 @@ export interface SetlistSong {
   id: string;
   title: string;
   bpm: number;
-  mode: 'metronome' | 'drums' | 'loop'; // ★ 'loop' を追加
+  mode: 'metronome' | 'drums' | 'loop';
   patternName: string;
   metroSound?: string;
   swingVal?: number;
-  table?: LoopTableRow[]; // ★ table を追加
+  table?: LoopTableRow[];
 }
-
 
 export interface SetlistData {
   id: string;
@@ -21,10 +20,9 @@ export interface SetlistData {
   songs: SetlistSong[];
 }
 
-// ★キーを v2 に変更して古いテスト用キャッシュを一掃！
 const STORAGE_KEY = 'metronome_ng_setlists_v2';
 
-// サンプル曲の生成関数（table データを確実に引き継ぐように修正）
+// サンプル曲の生成関数
 export function createSampleSongs(): SetlistSong[] {
   return rawSetListSample.items.map((item: any, idx: number) => {
     const isLoop = !!item.table && item.table.length > 0;
@@ -37,7 +35,6 @@ export function createSampleSongs(): SetlistSong[] {
       mode: isLoop ? 'loop' : (isDrum ? 'drums' : 'metronome'),
       patternName: isLoop ? 'Odd-Meter Loop' : (item.bar ? item.bar.name : '4/4'),
       swingVal: item.bar?.swingVal ?? 1.5,
-      // ★ ここで json に含まれる変拍子テーブルを確実にコピーする
       table: item.table ? item.table.map((t: any) => ({
         bar: t.bar,
         repeat: t.repeat ?? 1,
@@ -73,7 +70,6 @@ export function useSetlist() {
       if (saved) {
         let parsed = JSON.parse(saved) as SetlistData[];
 
-        // Default と Sample Tracks の保護を確実に復旧
         parsed = parsed.map((l) => {
           const lower = l.name.toLowerCase();
           if (l.id === 'default_setlist' || lower === 'default') {
@@ -85,7 +81,6 @@ export function useSetlist() {
           return l;
         });
 
-        // リスト欠損防止
         if (!parsed.some((l) => l.id === 'default_setlist')) {
           parsed.unshift(initialLists[0]);
         }
@@ -102,7 +97,6 @@ export function useSetlist() {
       console.warn('Failed to load setlists:', e);
     }
 
-    // 保存データがない場合の完全初期化
     setSetlists(initialLists);
     setActiveListId(initialLists[0].id);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(initialLists));
@@ -131,7 +125,6 @@ export function useSetlist() {
     const target = setlists.find((l) => l.id === id);
     if (!target) return;
     const lower = target.name.toLowerCase();
-    // Default と Sample は絶対に削除させない
     if (target.isProtected || target.id === 'default_setlist' || target.id === 'sample_setlist' || lower === 'default' || lower.includes('sample')) {
       return;
     }
@@ -156,6 +149,7 @@ export function useSetlist() {
     saveToStorage(next);
   }, [setlists, saveToStorage]);
 
+  // 現在のアクティブリストに追加する用
   const addCurrentSong = useCallback((
     title: string,
     bpm: number,
@@ -163,9 +157,24 @@ export function useSetlist() {
     pattern: MetronomePattern,
     metroSound: string,
     swingVal: number,
-    table?: LoopTableRow[] // ★追加
+    table?: LoopTableRow[]
   ) => {
-    if (!title.trim() || !activeList) return;
+    if (!activeList) return;
+    addSongToSpecificList(activeList.id, title, bpm, mode, pattern, metroSound, swingVal, table);
+  }, [activeList]);
+
+  // ★ モーダル等から特定のリストへ確実に追加する関数
+  const addSongToSpecificList = useCallback((
+    targetListId: string,
+    title: string,
+    bpm: number,
+    mode: 'metronome' | 'drums' | 'loop',
+    pattern: MetronomePattern,
+    metroSound: string,
+    swingVal: number,
+    table?: LoopTableRow[]
+  ) => {
+    if (!title.trim()) return;
 
     const newSong: SetlistSong = {
       id: `song_${Date.now()}`,
@@ -175,19 +184,20 @@ export function useSetlist() {
       patternName: mode === 'loop' ? 'Odd-Meter Loop' : pattern.name,
       metroSound: mode === 'metronome' ? metroSound : undefined,
       swingVal,
-      table, // ★追加
+      table,
     };
 
     const next = setlists.map((l) => {
-      if (l.id === activeList.id) {
+      if (l.id === targetListId) {
         return { ...l, songs: [...l.songs, newSong] };
       }
       return l;
     });
 
     saveToStorage(next);
+    setActiveListId(targetListId);
     setActiveSongId(newSong.id);
-  }, [activeList, setlists, saveToStorage]);
+  }, [setlists, saveToStorage]);
 
   const deleteSong = useCallback((songId: string) => {
     if (!activeList) return;
@@ -229,6 +239,44 @@ export function useSetlist() {
     return activeList.songs[nextIdx];
   }, [activeList, activeSongId]);
 
+// ★ 新規リストを名前付きで作り、そこに即座に曲を入れる関数
+  const createNewListWithSong = useCallback((
+    listName: string,
+    title: string,
+    bpm: number,
+    mode: 'metronome' | 'drums' | 'loop',
+    pattern: MetronomePattern,
+    metroSound: string,
+    swingVal: number,
+    table?: LoopTableRow[]
+  ) => {
+    if (!listName.trim() || !title.trim()) return;
+    const newListId = `list_${Date.now()}`;
+    const newList: SetlistData = {
+      id: newListId,
+      name: listName.trim(),
+      songs: [],
+    };
+
+    const newSong: SetlistSong = {
+      id: `song_${Date.now()}`,
+      title: title.trim(),
+      bpm,
+      mode,
+      patternName: mode === 'loop' ? 'Odd-Meter Loop' : pattern.name,
+      metroSound: mode === 'metronome' ? metroSound : undefined,
+      swingVal,
+      table,
+    };
+
+    newList.songs.push(newSong);
+
+    const next = [...setlists, newList];
+    saveToStorage(next);
+    setActiveListId(newListId);
+    setActiveSongId(newSong.id);
+  }, [setlists, saveToStorage]);
+
   return {
     setlists,
     activeList,
@@ -240,6 +288,8 @@ export function useSetlist() {
     deleteSetlist,
     resetSampleList,
     addCurrentSong,
+    addSongToSpecificList, // ★ 公開（return）追加完了！
+    createNewListWithSong,
     deleteSong,
     moveSong,
     getAdjacentSong,
